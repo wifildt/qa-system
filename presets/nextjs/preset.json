@@ -1,0 +1,33 @@
+{
+  "name": "Next.js (App Router)",
+  "description": "Preset for Next.js applications using App Router. Handles server components, client components, and API routes.",
+  "applies_when": {
+    "framework": "nextjs"
+  },
+  "defaults": {
+    "routing": {
+      "type": "nextjs-app",
+      "route_discovery": "Scan app/ directory structure for page.tsx files"
+    },
+    "selectors": {
+      "priority": ["data-testid", "aria-label", "role", "text"]
+    },
+    "conventions": {
+      "file_naming": "kebab-case",
+      "component_pattern": "function"
+    }
+  },
+  "special_considerations": [
+    "Server Components cannot be tested with Playwright state capture",
+    "API routes (/app/api/**) should be tested separately",
+    "Dynamic routes ([slug]) need test data for each param combination",
+    "Loading.tsx and Error.tsx need dedicated test scenarios"
+  ],
+  "extra_rules": [
+    {
+      "id": "PRESET-NEXT-001",
+      "name": "Server component awareness",
+      "description": "Tests must not assume client-side state for server-rendered content"
+    }
+  ]
+}

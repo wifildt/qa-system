@@ -1,0 +1,41 @@
+{
+  "name": "React + Redux (Saga/Thunk)",
+  "description": "Preset for React apps using Redux for state management. Covers Redux Toolkit, Redux Saga, and legacy Redux patterns.",
+  "applies_when": {
+    "framework": "react",
+    "state": ["redux", "redux-toolkit"]
+  },
+  "defaults": {
+    "state": {
+      "expose_key": "__REDUX_STORE__",
+      "common_store_paths": ["store", "store/modules", "redux", "state/slices"]
+    },
+    "selectors": {
+      "priority": ["data-testid", "aria-label", "role", "text"]
+    },
+    "conventions": {
+      "component_pattern": "function",
+      "api_pattern": "functional"
+    }
+  },
+  "state_validation": {
+    "snapshot_method": "window.__REDUX_STORE__.getState()",
+    "common_invariants": [
+      "After dispatch(reset): all slice fields return to initialState",
+      "Loading flag is true during API call, false after",
+      "Error state is set on saga failure"
+    ],
+    "saga_patterns": [
+      "takeLatest/takeEvery watching action.type",
+      "try/catch/finally with options.handleLoading, onSuccess, onFailure, onFinish"
+    ]
+  },
+  "extra_rules": [
+    {
+      "id": "PRESET-REDUX-001",
+      "name": "State snapshot required for write tests",
+      "description": "Tests that trigger Redux actions must capture state before and after",
+      "severity": "warning"
+    }
+  ]
+}

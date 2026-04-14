@@ -1,0 +1,97 @@
+{
+  "id": "selector-rules",
+  "version": "1.0.0",
+  "rules": [
+    {
+      "id": "SEL-001",
+      "name": "Prefer data-testid",
+      "description": "First choice for selectors. Stable across styling changes.",
+      "priority": 1,
+      "pattern": "[data-testid=\"{name}\"]",
+      "example": "page.locator('[data-testid=\"section-4-1-table\"]')"
+    },
+    {
+      "id": "SEL-002",
+      "name": "Prefer aria-label",
+      "description": "Second choice. Good for buttons and interactive elements.",
+      "priority": 2,
+      "pattern": "[aria-label=\"{label}\"]",
+      "example": "page.locator('[aria-label=\"Xóa dòng\"]')"
+    },
+    {
+      "id": "SEL-003",
+      "name": "Prefer role-based",
+      "description": "Third choice. Use Playwright's getByRole.",
+      "priority": 3,
+      "pattern": "page.getByRole('{role}', { name: '{name}' })",
+      "example": "page.getByRole('button', { name: 'Lưu' })"
+    },
+    {
+      "id": "SEL-004",
+      "name": "Allow text-based",
+      "description": "Fourth choice. For unique visible text.",
+      "priority": 4,
+      "pattern": "page.getByText('{text}')",
+      "example": "page.getByText('Ban đại diện cha mẹ học sinh')"
+    },
+    {
+      "id": "SEL-005",
+      "name": "FORBIDDEN: CSS class selectors",
+      "description": "CSS classes change frequently. Never use for assertions.",
+      "priority": -1,
+      "forbidden_patterns": [
+        ".ant-*",
+        ".sc-*",
+        ".__styled-*",
+        "[class*=",
+        ".css-*"
+      ]
+    },
+    {
+      "id": "SEL-006",
+      "name": "FORBIDDEN: Index-based selectors",
+      "description": "Position-based selectors break when data order changes.",
+      "priority": -1,
+      "forbidden_patterns": [
+        ":nth-child(",
+        ":nth-of-type(",
+        ":first-child",
+        ":last-child",
+        ">> nth="
+      ]
+    },
+    {
+      "id": "SEL-007",
+      "name": "Scoped selectors for tables",
+      "description": "Within tables, scope to row first, then cell.",
+      "pattern": "page.locator('[data-testid=\"row-{id}\"]').locator('[data-testid=\"cell-{col}\"]')",
+      "example": "page.locator('[data-testid=\"row-123\"]').locator('[data-testid=\"cell-name\"]')"
+    }
+  ],
+  "selector_registry": {
+    "description": "Known stable selectors in SCN codebase. Update as data-testid attributes are added.",
+    "sidebar": {
+      "container": ".notebook-sidebar, [class*='Sidebar']",
+      "nav_item": "Use getByText with section title from SIDEBAR_ITEMS"
+    },
+    "content_area": {
+      "container": "[class*='ContentColumn'], [class*='ContentArea']",
+      "header": "[class*='ContentHeader']"
+    },
+    "tables": {
+      "note": "SCN tables use antd Table. Rows have no data-testid by default. Use row content to identify.",
+      "row_by_text": "page.locator('tr').filter({ hasText: 'target text' })",
+      "editable_cell": "Click cell text to activate InlineEditCell"
+    },
+    "buttons": {
+      "save": "page.getByRole('button', { name: /lưu/i })",
+      "cancel": "page.getByRole('button', { name: /hủy|đặt lại/i })",
+      "add_row": "page.getByRole('button', { name: /thêm/i })",
+      "delete": "[aria-label*='xóa'], [aria-label*='Xóa']"
+    },
+    "modals": {
+      "confirm": ".ant-modal-confirm, [class*='ScnModal']",
+      "dirty_guard": "Modal with text containing 'chưa lưu' or 'thay đổi'"
+    }
+  }
+}

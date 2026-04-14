@@ -1,0 +1,134 @@
+{
+  "id": "feature-understanding",
+  "name": "Feature Understanding Agent",
+  "role": "Reads source code across all layers (UI components, Redux store, API definitions, hooks, routing) and produces a structured feature map that describes every user flow, data dependency, permission rule, and hidden behavior in the SCN module.",
+  "input_schema": {
+    "type": "object",
+    "required": ["source_paths", "store_paths"],
+    "properties": {
+      "source_paths": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Glob patterns for UI source files",
+        "example": [
+          "src/Pages/Teacher/HomeroomBook/**/*.{jsx,js}",
+          "src/Pages/HomeRoomManagement/**/*.{jsx,js}"
+        ]
+      },
+      "store_paths": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Glob patterns for state management files",
+        "example": [
+          "src/store/modules/homeroomNotebook/**/*.js"
+        ]
+      },
+      "route_paths": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Route definition files",
+        "example": [
+          "src/routes/role-routes/teacher.routes.jsx",
+          "src/routes/role-routes/school_admin.routes.jsx"
+        ]
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["sections", "user_flows", "permissions", "api_endpoints", "state_shape", "hidden_behaviors"],
+    "properties": {
+      "sections": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string", "example": "4.1" },
+            "name": { "type": "string", "example": "Ban Dai Dien CMHS" },
+            "component_file": { "type": "string" },
+            "data_hook": { "type": "string" },
+            "api_endpoints": { "type": "array", "items": { "type": "string" } },
+            "redux_actions": { "type": "array", "items": { "type": "string" } },
+            "editable_by_roles": { "type": "array", "items": { "type": "string" } },
+            "has_form": { "type": "boolean" },
+            "has_inline_edit": { "type": "boolean" },
+            "has_drag_drop": { "type": "boolean" },
+            "sub_features": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      },
+      "user_flows": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "role": { "type": "string" },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "action": { "type": "string" },
+                  "expected_ui": { "type": "string" },
+                  "expected_api": { "type": "string" },
+                  "expected_state": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "permissions": {
+        "type": "object",
+        "description": "Role -> section -> allowed actions matrix"
+      },
+      "api_endpoints": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "method": { "type": "string" },
+            "path": { "type": "string" },
+            "used_by_sections": { "type": "array" },
+            "request_params": { "type": "object" },
+            "response_shape": { "type": "object" }
+          }
+        }
+      },
+      "state_shape": {
+        "type": "object",
+        "description": "Redux state tree for homeroomNotebook slice"
+      },
+      "hidden_behaviors": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "description": { "type": "string" },
+            "trigger": { "type": "string" },
+            "effect": { "type": "string" },
+            "evidence_file": { "type": "string" },
+            "evidence_line": { "type": "number" }
+          }
+        },
+        "description": "Behaviors not obvious from UI: dirty guards, auto-save, copy-semester, permission inheritance, etc."
+      }
+    }
+  },
+  "constraints": [
+    "MUST read actual source code, never assume file contents",
+    "MUST trace data flow from component -> hook -> action -> saga -> API",
+    "MUST identify ALL conditional rendering paths",
+    "MUST document permission checks at every layer (route guard, component, API)",
+    "MUST list all side effects (toasts, redirects, state resets)",
+    "MUST NOT invent endpoints or behaviors not found in code"
+  ],
+  "failure_conditions": [
+    "Output references a file that does not exist",
+    "Output claims an API endpoint not defined in apis.js",
+    "Output misses a section that exists in ContentRouter.jsx",
+    "Output lists a permission that contradicts useNotebookPermission.js"
+  ]
+}

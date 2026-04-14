@@ -1,0 +1,83 @@
+{
+  "id": "api-rules",
+  "version": "1.0.0",
+  "rules": [
+    {
+      "id": "API-001",
+      "name": "Schema validation required",
+      "description": "Every API response must be validated against its expected schema, not just status code",
+      "bad_example": "expect(response.status).toBe(200)",
+      "good_example": "expect(response.status).toBe(200); expect(response.data).toHaveProperty('homeroom_notebook'); expect(response.data.homeroom_notebook).toHaveProperty('id'); expect(typeof response.data.homeroom_notebook.id).toBe('number')"
+    },
+    {
+      "id": "API-002",
+      "name": "Auth matrix testing",
+      "description": "Each endpoint must be tested with: correct role, wrong role, expired token, no token",
+      "test_matrix": [
+        { "scenario": "correct_role", "expected": "2xx" },
+        { "scenario": "wrong_role", "expected": "403" },
+        { "scenario": "expired_token", "expected": "401" },
+        { "scenario": "no_token", "expected": "401" }
+      ]
+    },
+    {
+      "id": "API-003",
+      "name": "Pagination boundary testing",
+      "description": "Paginated endpoints must be tested for: first page, last page, beyond-last page, page_size=0, negative page",
+      "applies_to": "Endpoints with page_id and per_page parameters"
+    },
+    {
+      "id": "API-004",
+      "name": "Error response structure",
+      "description": "Error responses must have consistent structure with error code and message",
+      "expected_shape": {
+        "errors": [{ "code": "string", "message": "string" }]
+      }
+    },
+    {
+      "id": "API-005",
+      "name": "Response timing threshold",
+      "description": "API responses should complete within acceptable time",
+      "thresholds": {
+        "GET_list": 3000,
+        "GET_detail": 2000,
+        "POST_create": 3000,
+        "PATCH_update": 3000,
+        "DELETE": 2000
+      },
+      "note": "Thresholds in ms. Exceeding is a warning, not a failure."
+    },
+    {
+      "id": "API-006",
+      "name": "Idempotency for GET",
+      "description": "GET requests with same params must return same data within a test run",
+      "check": "Call GET twice, compare response bodies"
+    },
+    {
+      "id": "API-007",
+      "name": "CRUD consistency",
+      "description": "After POST/PATCH, a subsequent GET must reflect the change",
+      "check": "Create/Update -> GET -> verify new values present"
+    },
+    {
+      "id": "API-008",
+      "name": "No hardcoded IDs",
+      "description": "Tests must obtain IDs from setup steps or API responses, never hardcode",
+      "severity": "error"
+    }
+  ],
+  "scn_endpoints": {
+    "base": "/v3/homeroom_notebooks",
+    "critical_endpoints": [
+      { "method": "GET", "path": "/homeroom_notebooks/class/:class_id", "role": "any_authenticated" },
+      { "method": "PATCH", "path": "/homeroom_notebooks/:id", "role": "gvcn" },
+      { "method": "GET", "path": "/homeroom_notebooks/:id/ban_dai_dien_cmhs", "role": "any_authenticated" },
+      { "method": "POST", "path": "/homeroom_notebooks/:id/ban_dai_dien_cmhs", "role": "gvcn" },
+      { "method": "GET", "path": "/homeroom_notebooks/:id/thong_tin_hs", "role": "any_authenticated" },
+      { "method": "GET", "path": "/homeroom_notebooks/:id/gvbm", "role": "any_authenticated" },
+      { "method": "GET", "path": "/homeroom_notebooks/:id/can_bo_lop", "role": "any_authenticated" },
+      { "method": "GET", "path": "/homeroom_notebooks/:id/scn_timetable", "role": "any_authenticated" },
+      { "method": "GET", "path": "/homeroom_notebooks/:id/bgh_nhan_xet", "role": "bgh" }
+    ]
+  }
+}

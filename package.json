@@ -1,0 +1,52 @@
+{
+  "name": "@anthropic-qa/agent-framework",
+  "version": "0.1.0",
+  "description": "Self-learning, multi-agent QA framework for frontend applications. Config-driven, multi-repo, with enforcement + self-healing + experience library.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "qa": "dist/bin/qa-cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "qa": "tsx bin/qa-cli.ts",
+    "detect": "tsx bin/qa-cli.ts detect",
+    "validate": "tsx bin/qa-cli.ts validate",
+    "run": "tsx bin/qa-cli.ts run",
+    "heal": "tsx bin/qa-cli.ts heal",
+    "experience": "tsx bin/qa-cli.ts experience",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "^1.57.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist/",
+    "src/",
+    "presets/",
+    "bin/"
+  ],
+  "keywords": [
+    "qa",
+    "testing",
+    "playwright",
+    "multi-agent",
+    "self-healing",
+    "ai-testing",
+    "experience-library"
+  ],
+  "license": "MIT"
+}

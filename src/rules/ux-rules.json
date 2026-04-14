@@ -1,0 +1,77 @@
+{
+  "id": "ux-rules",
+  "version": "1.0.0",
+  "rules": [
+    {
+      "id": "UX-001",
+      "name": "Loading state required",
+      "description": "Every async operation that takes >200ms must show a loading indicator",
+      "check": "After triggering API call, verify spinner/skeleton is visible before data loads",
+      "severity": "high"
+    },
+    {
+      "id": "UX-002",
+      "name": "Error feedback required",
+      "description": "Every failed operation must show an error message to the user",
+      "check": "Force API error (mock 500), verify toast or inline error message appears",
+      "severity": "critical"
+    },
+    {
+      "id": "UX-003",
+      "name": "Success feedback required",
+      "description": "Save/create/delete operations must confirm success to the user",
+      "check": "After successful PATCH/POST/DELETE, verify success toast appears",
+      "severity": "high"
+    },
+    {
+      "id": "UX-004",
+      "name": "Empty state design",
+      "description": "Sections with no data must show a helpful empty state, not blank space",
+      "check": "Open section with no data, verify empty state message or illustration visible",
+      "severity": "medium"
+    },
+    {
+      "id": "UX-005",
+      "name": "Dirty guard protection",
+      "description": "Users must be warned before losing unsaved changes",
+      "check": "Edit a field, try to navigate to another section, verify confirmation dialog appears",
+      "applies_to_sections": ["3.1", "3.2", "4.1", "4.2", "4.3", "4.4", "4.5", "5.1", "5.2", "5.3", "5.4", "5.5", "5.6", "5.7", "5.8", "6.1", "6.2", "6.3", "6.4", "7.1", "7.2", "7.3", "8", "9"],
+      "severity": "critical"
+    },
+    {
+      "id": "UX-006",
+      "name": "Permission-denied clarity",
+      "description": "Non-editable sections must clearly indicate read-only state, not just disabled controls",
+      "check": "Login as non-GVCN role, open section, verify visual indication of read-only mode",
+      "severity": "medium"
+    },
+    {
+      "id": "UX-007",
+      "name": "Navigation feedback",
+      "description": "Active section must be highlighted in sidebar after navigation",
+      "check": "Click section in sidebar, verify it becomes active/highlighted",
+      "severity": "medium"
+    },
+    {
+      "id": "UX-008",
+      "name": "Form validation proximity",
+      "description": "Validation errors must appear near the invalid field, not only in toast",
+      "check": "Submit form with invalid data, verify error indicator near the field",
+      "severity": "medium"
+    },
+    {
+      "id": "UX-009",
+      "name": "Keyboard accessibility",
+      "description": "All interactive elements must be reachable via keyboard (Tab, Enter, Escape)",
+      "check": "Navigate entire section using only keyboard, verify all actions accessible",
+      "severity": "high"
+    },
+    {
+      "id": "UX-010",
+      "name": "Response time perception",
+      "description": "Operations completing in <100ms need no feedback. 100ms-1s need progress. >1s need loading.",
+      "thresholds_ms": { "instant": 100, "progress": 1000, "loading": 1000 },
+      "severity": "low"
+    }
+  ]
+}

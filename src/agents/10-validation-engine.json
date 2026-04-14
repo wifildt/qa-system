@@ -1,0 +1,100 @@
+{
+  "id": "validation-engine",
+  "name": "Validation Engine (Non-AI Hybrid)",
+  "role": "Parses AI-generated test code and REJECTS any output that violates quality, selector, API, or anti-hallucination rules. This is the enforcement layer that makes the system trustworthy. AI cannot bypass it.",
+  "type": "non-ai",
+  "implementation": "scripts/validation-engine.ts",
+  "pipeline_position": "BETWEEN Test Generators AND Execution Engine",
+  "input_schema": {
+    "type": "object",
+    "required": ["test_files"],
+    "properties": {
+      "test_files": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Paths to generated test files to validate"
+      },
+      "rules_config": {
+        "type": "object",
+        "description": "Optional: override rule severity or disable specific rules",
+        "properties": {
+          "disabled_rules": { "type": "array", "items": { "type": "string" } },
+          "severity_overrides": { "type": "object" }
+        }
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["passed", "blocked", "results", "summary"],
+    "properties": {
+      "timestamp": { "type": "string" },
+      "total_files": { "type": "number" },
+      "passed": { "type": "number", "description": "Files cleared for execution" },
+      "blocked": { "type": "number", "description": "Files rejected — WILL NOT execute" },
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "file": { "type": "string" },
+            "passed": { "type": "boolean" },
+            "violations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "ruleId": { "type": "string" },
+                  "severity": { "type": "string", "enum": ["error", "warning"] },
+                  "message": { "type": "string" },
+                  "line": { "type": "number" },
+                  "snippet": { "type": "string" },
+                  "fix_hint": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "summary": {
+        "type": "object",
+        "properties": {
+          "most_common_violations": { "type": "array" },
+          "files_blocked": { "type": "array" },
+          "recommendation": { "type": "string" }
+        }
+      }
+    }
+  },
+  "rules_enforced": [
+    "TQ-001: No trivial assertions (expect(true).toBe(true))",
+    "TQ-002: No arbitrary waits (waitForTimeout > 1s without condition)",
+    "TQ-003: Evidence capture required (screenshot/network/state)",
+    "TQ-005: Cleanup required for mutations",
+    "TQ-006: Vietnamese text encoding correctness",
+    "SEL-005: No CSS class selectors (.ant-*, .sc-*, .css-*)",
+    "SEL-006: No index-based selectors (:nth-child)",
+    "API-001: Schema validation required (not just status code)",
+    "API-008: No hardcoded IDs",
+    "AH-008: No assumed user data (hardcoded Vietnamese names)"
+  ],
+  "constraints": [
+    "MUST parse actual test file content — no AI interpretation",
+    "MUST use regex/AST pattern matching — deterministic, reproducible",
+    "MUST block files with ANY error-level violations (warnings pass through)",
+    "MUST produce fix hints for every violation (actionable, not vague)",
+    "MUST exit with non-zero code when files are blocked (breaks CI pipeline)",
+    "MUST NOT modify test files — only report (modification is Self-Healing's job)"
+  ],
+  "failure_conditions": [
+    "A test with expect(true).toBe(true) passes validation",
+    "A test using .ant-table-row selector passes validation",
+    "A test with waitForTimeout(5000) and no prior wait passes validation",
+    "A test with no screenshots or network capture passes validation"
+  ],
+  "extensibility": {
+    "adding_rules": "Add new entry to RULES object in validation-engine.ts with checker function",
+    "custom_severity": "Pass severity_overrides in rules_config to promote warnings to errors",
+    "disable_rules": "Pass disabled_rules array to skip specific rules for specific files"
+  }
+}

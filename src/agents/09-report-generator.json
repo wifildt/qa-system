@@ -1,0 +1,104 @@
+{
+  "id": "report-generator",
+  "name": "Report Generator Agent",
+  "role": "Aggregates all analysis results into a structured, actionable QA report with severity-grouped issues, evidence links, reproduction steps, and fix suggestions.",
+  "input_schema": {
+    "type": "object",
+    "required": ["execution_results", "inconsistencies", "ux_findings"],
+    "properties": {
+      "execution_results": { "type": "object" },
+      "inconsistencies": { "type": "object" },
+      "ux_findings": { "type": "object" },
+      "feature_map": { "type": "object" },
+      "test_plan": { "type": "object" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["report"],
+    "properties": {
+      "report": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "generated_at": { "type": "string" },
+              "environment": { "type": "string" },
+              "branch": { "type": "string" },
+              "commit": { "type": "string" },
+              "duration_ms": { "type": "number" }
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "total_tests": { "type": "number" },
+              "passed": { "type": "number" },
+              "failed": { "type": "number" },
+              "issues_found": { "type": "number" },
+              "critical_issues": { "type": "number" },
+              "sections_covered": { "type": "number" },
+              "sections_total": { "type": "number" }
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "title", "severity", "category", "description", "reproduction", "evidence", "suggested_fix"],
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+                "category": { "type": "string", "enum": ["ui", "api", "logic", "ux", "consistency", "performance", "security"] },
+                "section": { "type": "string" },
+                "description": { "type": "string" },
+                "reproduction": {
+                  "type": "object",
+                  "properties": {
+                    "preconditions": { "type": "array" },
+                    "steps": { "type": "array" },
+                    "expected": { "type": "string" },
+                    "actual": { "type": "string" }
+                  }
+                },
+                "evidence": {
+                  "type": "object",
+                  "properties": {
+                    "screenshots": { "type": "array" },
+                    "logs": { "type": "array" },
+                    "har_entries": { "type": "array" },
+                    "state_snapshots": { "type": "array" }
+                  }
+                },
+                "root_cause_hypothesis": { "type": "string" },
+                "suggested_fix": { "type": "string" },
+                "affected_files": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          },
+          "coverage": {
+            "type": "object",
+            "description": "Section-by-section test coverage breakdown"
+          },
+          "recommendations": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Top-level improvement recommendations"
+          }
+        }
+      }
+    }
+  },
+  "output_formats": ["json", "html", "markdown"],
+  "constraints": [
+    "Issues MUST be grouped by severity (critical first)",
+    "Every issue MUST have reproduction steps and evidence",
+    "MUST NOT include issues that cannot be reproduced with the evidence",
+    "MUST calculate coverage percentage per section",
+    "MUST highlight untested areas",
+    "Suggested fixes MUST reference specific files and line numbers where possible",
+    "MUST generate both machine-readable (JSON) and human-readable (HTML) formats"
+  ]
+}

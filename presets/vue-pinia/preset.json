@@ -1,0 +1,33 @@
+{
+  "name": "Vue 3 + Pinia",
+  "description": "Preset for Vue 3 apps using Pinia for state management and Vue Router.",
+  "applies_when": {
+    "framework": "vue",
+    "state": ["pinia"]
+  },
+  "defaults": {
+    "state": {
+      "expose_key": "__pinia",
+      "common_store_paths": ["stores", "store"]
+    },
+    "routing": {
+      "type": "vue-router"
+    },
+    "selectors": {
+      "priority": ["data-testid", "aria-label", "role", "text"],
+      "testid_attribute": "data-testid"
+    },
+    "conventions": {
+      "file_naming": "PascalCase",
+      "component_pattern": "function"
+    }
+  },
+  "state_validation": {
+    "snapshot_method": "JSON.parse(JSON.stringify(window.__pinia.state.value))",
+    "common_invariants": [
+      "After $reset(): store returns to initial state",
+      "Getters reflect current state after mutation"
+    ]
+  },
+  "extra_rules": []
+}

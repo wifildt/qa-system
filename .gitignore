@@ -1,0 +1,27 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Runtime data
+experience-db.json
+learning-db.json
+rule-scores.json
+
+# Test artifacts
+reports/
+test-results/
+*.har
+*.zip
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local

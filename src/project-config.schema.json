@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QA System Project Configuration",
+  "description": "Single config file that adapts the entire QA system to any frontend repo. Every agent reads this instead of hardcoded paths.",
+  "type": "object",
+  "required": ["project", "framework", "state", "routing", "api", "auth", "features"],
+  "properties": {
+
+    "project": {
+      "type": "object",
+      "required": ["name", "root", "src_dir"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable project name",
+          "examples": ["Homeroom Notebook", "Student Assessment", "LMS Dashboard"]
+        },
+        "root": {
+          "type": "string",
+          "description": "Absolute path to project root",
+          "examples": ["/Users/dev/workspaces/web.thoikhoabieu.hcm.edu.vn"]
+        },
+        "src_dir": {
+          "type": "string",
+          "description": "Source directory relative to root",
+          "default": "src",
+          "examples": ["src", "app", "lib"]
+        },
+        "language": {
+          "type": "string",
+          "enum": ["typescript", "javascript", "mixed"],
+          "default": "mixed"
+        },
+        "package_manager": {
+          "type": "string",
+          "enum": ["npm", "yarn", "pnpm", "bun"],
+          "default": "npm"
+        }
+      }
+    },
+
+    "framework": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": ["react", "nextjs", "vue", "nuxt", "angular", "svelte"],
+          "description": "Frontend framework"
+        },
+        "version": { "type": "string" },
+        "bundler": {
+          "type": "string",
+          "enum": ["vite", "webpack", "turbopack", "esbuild", "rollup"],
+          "default": "vite"
+        },
+        "ui_library": {
+          "type": "string",
+          "description": "Primary UI component library",
+          "examples": ["antd", "mui", "chakra", "shadcn", "none"]
+        },
+        "styling": {
+          "type": "string",
+          "enum": ["styled-components", "tailwind", "css-modules", "sass", "emotion", "vanilla-extract", "mixed"],
+          "default": "mixed"
+        }
+      }
+    },
+
+    "state": {
+      "type": "object",
+      "required": ["manager"],
+      "properties": {
+        "manager": {
+          "type": "string",
+          "enum": ["redux", "redux-toolkit", "zustand", "mobx", "pinia", "vuex", "jotai", "recoil", "context-only", "none"],
+          "description": "Primary state management solution"
+        },
+        "side_effects": {
+          "type": "string",
+          "enum": ["redux-saga", "redux-thunk", "rtk-query", "tanstack-query", "swr", "custom", "none"],
+          "default": "none"
+        },
+        "store_path": {
+          "type": "string",
+          "description": "Path to store directory relative to src_dir",
+          "examples": ["store", "store/modules", "stores", "state"]
+        },
+        "expose_on_window": {
+          "type": "boolean",
+          "description": "Whether Redux store is accessible via window.__REDUX_STORE__ in dev builds",
+          "default": false
+        },
+        "expose_key": {
+          "type": "string",
+          "description": "Window key for store access",
+          "default": "__REDUX_STORE__"
+        }
+      }
+    },
+
+    "routing": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["react-router", "nextjs-app", "nextjs-pages", "vue-router", "tanstack-router", "custom"]
+        },
+        "route_files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths to route definition files relative to src_dir",
+          "examples": [["routes/role-routes/teacher.routes.jsx", "routes/role-routes/school_admin.routes.jsx"]]
+        },
+        "base_path": {
+          "type": "string",
+          "default": "/",
+          "description": "Base URL path for the app"
+        }
+      }
+    },
+
+    "api": {
+      "type": "object",
+      "required": ["base_url", "version_prefix"],
+      "properties": {
+        "base_url": {
+          "type": "string",
+          "description": "Full API base URL for testing",
+          "examples": ["https://slldt.lms360.vn/api"]
+        },
+        "version_prefix": {
+          "type": "string",
+          "description": "API version prefix",
+          "examples": ["/v3", "/api/v1", ""]
+        },
+        "client": {
+          "type": "string",
+          "enum": ["axios", "apisauce", "fetch", "ky", "custom"],
+          "default": "axios"
+        },
+        "interceptor_file": {
+          "type": "string",
+          "description": "Path to HTTP interceptor/client config",
+          "examples": ["utils/axiosClient.js", "services/Api.service.js"]
+        },
+        "response_format": {
+          "type": "object",
+          "description": "Standard response envelope shape",
+          "properties": {
+            "data_key": { "type": "string", "default": "data", "examples": ["data", "result", "payload"] },
+            "error_key": { "type": "string", "default": "errors", "examples": ["errors", "error", "message"] },
+            "pagination_keys": {
+              "type": "object",
+              "properties": {
+                "page": { "type": "string", "default": "page_id" },
+                "per_page": { "type": "string", "default": "per_page" },
+                "total": { "type": "string", "default": "total" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "auth": {
+      "type": "object",
+      "required": ["type", "accounts"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["bearer", "cookie", "session", "oauth", "api_key"]
+        },
+        "login_endpoint": {
+          "type": "string",
+          "description": "API path for login",
+          "examples": ["/v3/auth/login", "/api/sessions"]
+        },
+        "login_fields": {
+          "type": "object",
+          "description": "Field names for login request",
+          "properties": {
+            "username": { "type": "string", "default": "phone", "examples": ["phone", "email", "username"] },
+            "password": { "type": "string", "default": "password" }
+          }
+        },
+        "token_storage": {
+          "type": "string",
+          "enum": ["localStorage", "sessionStorage", "cookie", "memory"],
+          "default": "localStorage"
+        },
+        "token_key": {
+          "type": "string",
+          "default": "token",
+          "description": "Key used to store auth token"
+        },
+        "accounts": {
+          "type": "object",
+          "description": "Test accounts keyed by role name",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["credentials", "entry_route"],
+            "properties": {
+              "credentials": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string" }
+                }
+              },
+              "entry_route": {
+                "type": "string",
+                "description": "URL path this role lands on after login"
+              },
+              "capabilities": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "features": {
+      "type": "array",
+      "description": "Features to test. Each feature defines its code locations and entry points.",
+      "items": {
+        "type": "object",
+        "required": ["name", "pages_glob", "store_glob", "entry_url"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Feature name for reporting"
+          },
+          "pages_glob": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Glob patterns for page/component files relative to src_dir",
+            "examples": [["Pages/Teacher/HomeroomBook/**/*.{jsx,js,tsx,ts}"]]
+          },
+          "store_glob": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Glob patterns for state management files",
+            "examples": [["store/modules/homeroomNotebook/**/*.js"]]
+          },
+          "entry_url": {
+            "type": "string",
+            "description": "URL path to access this feature",
+            "examples": ["/teacher/quan-ly-lop/so-chu-nhiem"]
+          },
+          "api_prefix": {
+            "type": "string",
+            "description": "API path prefix for this feature's endpoints",
+            "examples": ["/homeroom_notebooks"]
+          },
+          "roles_with_access": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Which account roles can access this feature"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string" },
+                "name": { "type": "string" },
+                "editable_by": { "type": "array", "items": { "type": "string" } }
+              }
+            },
+            "description": "Optional: sub-sections within the feature (e.g., stepper steps)"
+          }
+        }
+      }
+    },
+
+    "selectors": {
+      "type": "object",
+      "description": "Selector strategy config — adapts to each project's DOM conventions",
+      "properties": {
+        "priority": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["data-testid", "aria-label", "role", "text", "css"]
+          },
+          "default": ["data-testid", "aria-label", "role", "text"],
+          "description": "Selector preference order. 'css' should only be last resort."
+        },
+        "testid_attribute": {
+          "type": "string",
+          "default": "data-testid",
+          "description": "Custom test ID attribute name",
+          "examples": ["data-testid", "data-cy", "data-test"]
+        },
+        "forbidden_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [".ant-*", ".sc-*", ".css-*", ".MuiGrid-*", ":nth-child("],
+          "description": "CSS patterns that should never appear in test selectors"
+        }
+      }
+    },
+
+    "test_runner": {
+      "type": "object",
+      "properties": {
+        "unit": {
+          "type": "string",
+          "enum": ["vitest", "jest", "mocha"],
+          "default": "vitest"
+        },
+        "e2e": {
+          "type": "string",
+          "enum": ["playwright", "cypress", "puppeteer"],
+          "default": "playwright"
+        },
+        "browser": {
+          "type": "string",
+          "enum": ["chromium", "firefox", "webkit"],
+          "default": "chromium"
+        },
+        "base_url": {
+          "type": "string",
+          "description": "App URL for E2E tests",
+          "examples": ["https://test.lms360.vn", "http://localhost:3000"]
+        },
+        "viewport": {
+          "type": "object",
+          "properties": {
+            "width": { "type": "number", "default": 1440 },
+            "height": { "type": "number", "default": 900 }
+          }
+        },
+        "locale": {
+          "type": "string",
+          "default": "en-US",
+          "examples": ["vi-VN", "en-US", "ja-JP"]
+        }
+      }
+    },
+
+    "conventions": {
+      "type": "object",
+      "description": "Detected or manually specified project conventions. Convention Detector fills this automatically.",
+      "properties": {
+        "file_naming": {
+          "type": "string",
+          "enum": ["PascalCase", "camelCase", "kebab-case", "snake_case", "mixed"],
+          "description": "Component file naming convention"
+        },
+        "component_pattern": {
+          "type": "string",
+          "enum": ["function", "class", "mixed"],
+          "default": "function"
+        },
+        "api_pattern": {
+          "type": "string",
+          "enum": ["class-based", "functional", "rtk-query", "tanstack-query", "mixed"],
+          "description": "How API calls are organized"
+        },
+        "form_library": {
+          "type": "string",
+          "enum": ["react-hook-form", "formik", "antd-form", "native", "none"],
+          "description": "Primary form management library"
+        },
+        "i18n": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the app uses internationalization"
+        },
+        "i18n_library": {
+          "type": "string",
+          "examples": ["react-i18next", "vue-i18n", "next-intl"]
+        }
+      }
+    }
+  }
+}

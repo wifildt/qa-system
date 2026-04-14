@@ -1,0 +1,93 @@
+{
+  "id": "consistency-analyzer",
+  "name": "Consistency Analyzer Agent",
+  "role": "Cross-references execution results across UI, API, and state layers to detect inconsistencies that single-layer tests cannot catch. Identifies mismatches between what the UI shows, what the API returned, and what Redux holds.",
+  "input_schema": {
+    "type": "object",
+    "required": ["execution_results", "har_logs"],
+    "properties": {
+      "execution_results": {
+        "type": "object",
+        "description": "Output from Execution Engine"
+      },
+      "har_logs": {
+        "type": "array",
+        "description": "HAR files captured during UI test execution"
+      },
+      "state_snapshots": {
+        "type": "array",
+        "description": "Redux state snapshots captured at key moments"
+      },
+      "screenshots": {
+        "type": "array",
+        "description": "Screenshot file paths for visual cross-checking"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["inconsistencies"],
+    "properties": {
+      "inconsistencies": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "type", "severity", "description", "evidence"],
+          "properties": {
+            "id": { "type": "string" },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ui_api_mismatch",
+                "api_state_mismatch",
+                "ui_state_mismatch",
+                "stale_data",
+                "race_condition",
+                "silent_failure",
+                "phantom_success"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "enum": ["critical", "high", "medium", "low"]
+            },
+            "description": { "type": "string" },
+            "evidence": {
+              "type": "object",
+              "properties": {
+                "ui_value": { "type": "string" },
+                "api_value": { "type": "string" },
+                "state_value": { "type": "string" },
+                "screenshot": { "type": "string" },
+                "har_entry": { "type": "string" },
+                "timestamp": { "type": "string" }
+              }
+            },
+            "root_cause_hypothesis": { "type": "string" },
+            "affected_section": { "type": "string" },
+            "reproduction": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "constraints": [
+    "MUST only report inconsistencies with concrete evidence from execution artifacts",
+    "MUST NOT speculate without data — if evidence is ambiguous, mark confidence level",
+    "MUST check: API returned error but UI shows success (phantom_success)",
+    "MUST check: UI shows old data after save/refresh (stale_data)",
+    "MUST check: Redux state differs from what UI renders (ui_state_mismatch)",
+    "MUST check: API response differs from Redux state (api_state_mismatch)",
+    "MUST timestamp all evidence for ordering analysis"
+  ],
+  "failure_conditions": [
+    "Reports inconsistency without citing specific evidence",
+    "Claims phantom_success without both API error log AND UI success indicator"
+  ],
+  "detection_patterns": {
+    "phantom_success": "API response status >= 400 BUT no error toast/UI AND success toast shown",
+    "stale_data": "API response contains updated value BUT UI still shows previous value after re-render",
+    "race_condition": "Two API calls to same endpoint within 500ms with different results",
+    "silent_failure": "Saga catch block triggered BUT no user-visible error indication"
+  }
+}

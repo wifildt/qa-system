@@ -1,0 +1,149 @@
+{
+  "$schema": "../core/project-config.schema.json",
+
+  "project": {
+    "name": "Homeroom Notebook (So Chu Nhiem)",
+    "root": "/Users/ledanhtrong/workspaces/web.thoikhoabieu.hcm.edu.vn",
+    "src_dir": "src",
+    "language": "mixed",
+    "package_manager": "npm"
+  },
+
+  "framework": {
+    "name": "react",
+    "version": "18",
+    "bundler": "vite",
+    "ui_library": "antd",
+    "styling": "styled-components"
+  },
+
+  "state": {
+    "manager": "redux",
+    "side_effects": "redux-saga",
+    "store_path": "store/modules/homeroomNotebook",
+    "expose_on_window": false,
+    "expose_key": "__REDUX_STORE__"
+  },
+
+  "routing": {
+    "type": "react-router",
+    "route_files": [
+      "routes/role-routes/teacher.routes.jsx",
+      "routes/role-routes/school_admin.routes.jsx"
+    ],
+    "base_path": "/"
+  },
+
+  "api": {
+    "base_url": "https://slldt.lms360.vn/api",
+    "version_prefix": "/v3",
+    "client": "apisauce",
+    "interceptor_file": "utils/axiosClient.js",
+    "response_format": {
+      "data_key": "data",
+      "error_key": "errors",
+      "pagination_keys": {
+        "page": "page_id",
+        "per_page": "per_page",
+        "total": "total"
+      }
+    }
+  },
+
+  "auth": {
+    "type": "bearer",
+    "login_endpoint": "/v3/sessions",
+    "login_fields": {
+      "username": "phone",
+      "password": "password"
+    },
+    "token_storage": "localStorage",
+    "token_key": "token",
+    "accounts": {
+      "gvcn": {
+        "credentials": { "username": "094181009777", "password": "123123" },
+        "entry_route": "/teacher/quan-ly-lop/so-chu-nhiem",
+        "capabilities": ["view_all_sections", "edit_sections_1_to_8", "export"]
+      },
+      "admin": {
+        "credentials": { "username": "0933554421", "password": "test@123!" },
+        "entry_route": "/school-admin/ho-so-luu-tru/so-chu-nhiem",
+        "capabilities": ["view_all_sections", "assign_bgh", "export", "manage_classes"]
+      },
+      "teacher": {
+        "credentials": { "username": "079172034747", "password": "123123" },
+        "entry_route": "/teacher/ho-so-luu-tru/so-chu-nhiem",
+        "capabilities": ["limited_view"]
+      }
+    }
+  },
+
+  "features": [
+    {
+      "name": "Homeroom Notebook (SCN)",
+      "pages_glob": [
+        "Pages/Teacher/HomeroomBook/**/*.{jsx,js}",
+        "Pages/HomeRoomManagement/**/*.{jsx,js}"
+      ],
+      "store_glob": [
+        "store/modules/homeroomNotebook/**/*.js"
+      ],
+      "entry_url": "/teacher/quan-ly-lop/so-chu-nhiem",
+      "api_prefix": "/homeroom_notebooks",
+      "roles_with_access": ["gvcn", "admin", "teacher"],
+      "sections": [
+        { "key": "1", "name": "Bia so (Cover)", "editable_by": [] },
+        { "key": "2.1", "name": "Quy dinh (Regulations)", "editable_by": [] },
+        { "key": "2.2", "name": "Noi quy truong (School Rules)", "editable_by": [] },
+        { "key": "2.3", "name": "Chuan danh gia lop (Assessment Standards)", "editable_by": [] },
+        { "key": "3.1", "name": "Danh sach hoc sinh (Student List)", "editable_by": ["gvcn"] },
+        { "key": "3.2", "name": "Danh sach giao vien (Teacher List)", "editable_by": ["gvcn"] },
+        { "key": "4.1", "name": "Ban dai dien CMHS (Parent Committee)", "editable_by": ["gvcn"] },
+        { "key": "4.2", "name": "Can bo lop (Class Officers)", "editable_by": ["gvcn"] },
+        { "key": "4.3", "name": "To hoc sinh (Student Groups)", "editable_by": ["gvcn"] },
+        { "key": "4.4", "name": "So do lop (Seating)", "editable_by": ["gvcn"] },
+        { "key": "4.5", "name": "Thoi khoa bieu (Timetable)", "editable_by": ["gvcn"] },
+        { "key": "5.1", "name": "Tinh hinh lop (Class Situation)", "editable_by": ["gvcn"] },
+        { "key": "5.2", "name": "Ke hoach chu nhiem (Homeroom Plan)", "editable_by": ["gvcn"] },
+        { "key": "5.3", "name": "Chi tieu (Targets)", "editable_by": ["gvcn"] },
+        { "key": "5.4", "name": "Ke hoach thang (Monthly Plan)", "editable_by": ["gvcn"] },
+        { "key": "5.5", "name": "Tong ket HK1 (Semester 1 Review)", "editable_by": ["gvcn"] },
+        { "key": "5.6", "name": "Tong ket ca nam (Year Review)", "editable_by": ["gvcn"] },
+        { "key": "5.7", "name": "Noi dung sinh hoat lop (Class Activities)", "editable_by": ["gvcn"] },
+        { "key": "5.8", "name": "Cac hoat dong thuc hien (Activities)", "editable_by": ["gvcn"] },
+        { "key": "6.1", "name": "Theo doi hoc sinh (Student Tracking)", "editable_by": ["gvcn"] },
+        { "key": "6.2", "name": "Ket qua ren luyen thang (Monthly Conduct)", "editable_by": ["gvcn"] },
+        { "key": "6.3", "name": "Khen thuong (Achievement Tracking)", "editable_by": ["gvcn"] },
+        { "key": "6.4", "name": "Theo doi tung hoc sinh (Per-Student Tracking)", "editable_by": ["gvcn"] },
+        { "key": "7.1", "name": "Buoi hop phu huynh (Parent Meetings)", "editable_by": ["gvcn"] },
+        { "key": "7.2", "name": "BHYT va khoan kinh phi (Insurance/Fees)", "editable_by": ["gvcn"] },
+        { "key": "7.3", "name": "Lien lac phu huynh (Parent Communication)", "editable_by": ["gvcn"] },
+        { "key": "8", "name": "Ghi chu bo sung (Additional Notes)", "editable_by": ["gvcn"] },
+        { "key": "9", "name": "Nhan xet BGH (Principal Review)", "editable_by": ["bgh"] }
+      ]
+    }
+  ],
+
+  "selectors": {
+    "priority": ["data-testid", "aria-label", "role", "text"],
+    "testid_attribute": "data-testid",
+    "forbidden_patterns": [".ant-*", ".sc-*", ".css-*", ":nth-child(", "[class*="]
+  },
+
+  "test_runner": {
+    "unit": "vitest",
+    "e2e": "playwright",
+    "browser": "chromium",
+    "base_url": "https://test.lms360.vn",
+    "viewport": { "width": 1440, "height": 900 },
+    "locale": "vi-VN"
+  },
+
+  "conventions": {
+    "file_naming": "PascalCase",
+    "component_pattern": "function",
+    "api_pattern": "functional",
+    "form_library": "react-hook-form",
+    "i18n": false
+  }
+}

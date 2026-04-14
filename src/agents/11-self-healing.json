@@ -1,0 +1,157 @@
+{
+  "id": "self-healing",
+  "name": "Self-Healing Agent (Closed-Loop Feedback)",
+  "role": "Analyzes test execution failures, classifies them, applies automatic fixes for known patterns, and queues unfixable failures for AI regeneration. Maintains a learning database that grows smarter over time.",
+  "type": "hybrid",
+  "implementation": "scripts/self-healing-agent.ts",
+  "pipeline_position": "AFTER Execution Engine, FEEDS BACK to Test Generators",
+  "input_schema": {
+    "type": "object",
+    "required": ["execution_results"],
+    "properties": {
+      "execution_results": {
+        "type": "string",
+        "description": "Path to execution-results.json from Playwright/Vitest"
+      },
+      "dry_run": {
+        "type": "boolean",
+        "default": false,
+        "description": "If true, diagnose and suggest fixes without modifying files"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["totalFailures", "autoFixed", "needsRegeneration", "diagnoses", "regenerationQueue"],
+    "properties": {
+      "timestamp": { "type": "string" },
+      "totalFailures": { "type": "number" },
+      "diagnosed": { "type": "number" },
+      "autoFixed": { "type": "number", "description": "Failures fixed by deterministic rules" },
+      "needsRegeneration": { "type": "number", "description": "Failures that need AI to rewrite the test" },
+      "unresolvable": { "type": "number", "description": "Infrastructure/env issues, not test issues" },
+      "diagnoses": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "testId": { "type": "string" },
+            "testFile": { "type": "string" },
+            "failureType": {
+              "type": "string",
+              "enum": [
+                "selector_not_found",
+                "selector_ambiguous",
+                "timeout_waiting",
+                "stale_data",
+                "assertion_mismatch",
+                "network_error",
+                "auth_expired",
+                "infrastructure",
+                "unknown"
+              ]
+            },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+            "autoFixable": { "type": "boolean" },
+            "suggestedFix": { "type": "object" },
+            "regenerationNeeded": { "type": "boolean" },
+            "regenerationContext": { "type": "string" }
+          }
+        }
+      },
+      "appliedFixes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["selector_update", "wait_upgrade", "retry_add", "data_dynamic"] },
+            "file": { "type": "string" },
+            "original": { "type": "string" },
+            "replacement": { "type": "string" },
+            "reason": { "type": "string" }
+          }
+        }
+      },
+      "regenerationQueue": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "testFile": { "type": "string" },
+            "context": { "type": "string", "description": "Failure context to feed back to AI test generator" }
+          }
+        },
+        "description": "Files that need AI agents to regenerate tests"
+      },
+      "learningUpdates": { "type": "array", "description": "New entries added to learning DB" }
+    }
+  },
+  "failure_classification": {
+    "selector_not_found": {
+      "auto_fix": "Replace CSS/testid with getByRole/getByText",
+      "confidence": 0.9
+    },
+    "selector_ambiguous": {
+      "auto_fix": "Add .first() or .filter()",
+      "confidence": 0.85
+    },
+    "timeout_waiting": {
+      "auto_fix": "Increase timeout or add waitForLoadState",
+      "confidence": 0.8
+    },
+    "stale_data": {
+      "auto_fix": "NONE — needs AI to understand data model",
+      "regenerate": true
+    },
+    "assertion_mismatch": {
+      "auto_fix": "NONE — needs AI to verify expected value",
+      "regenerate": true
+    },
+    "network_error": {
+      "auto_fix": "NONE — environment issue",
+      "regenerate": false,
+      "action": "Alert operator"
+    },
+    "auth_expired": {
+      "auto_fix": "Clear token cache, force re-login",
+      "confidence": 0.85
+    },
+    "infrastructure": {
+      "auto_fix": "NONE — browser/OS issue",
+      "regenerate": false,
+      "action": "Alert operator"
+    }
+  },
+  "learning_database": {
+    "path": "analysis/learning-db.json",
+    "purpose": "Records which fixes worked and which didn't. Prevents infinite loops of the same failing fix.",
+    "max_entries": 500,
+    "pruning": "FIFO — oldest entries dropped when limit reached",
+    "dedup_logic": "If same fix type failed 2+ times on same file, escalate to regeneration instead of retrying"
+  },
+  "feedback_loop": {
+    "description": "The closed loop that makes the system self-improving",
+    "flow": [
+      "1. Execution Engine produces execution-results.json",
+      "2. Self-Healing reads failures, classifies each one",
+      "3. For auto-fixable: apply deterministic fix to test file",
+      "4. For non-fixable: add to regenerationQueue with context",
+      "5. Orchestrator sends regenerationQueue to AI Test Generators",
+      "6. AI regenerates tests with failure context",
+      "7. Validation Engine checks regenerated tests",
+      "8. Execution Engine runs again",
+      "9. If still failing: learning DB marks fix as 'failed', try different strategy",
+      "10. After 3 iterations: mark as 'needs_human_review'"
+    ],
+    "max_iterations": 3,
+    "escalation": "After 3 auto-heal attempts, report to human with full diagnosis"
+  },
+  "constraints": [
+    "MUST NOT modify test logic — only selectors, waits, and infra",
+    "MUST NOT change assertions (that's the AI agent's job via regeneration)",
+    "MUST check learning DB before applying a fix (avoid infinite loops)",
+    "MUST record every fix attempt in learning DB",
+    "MUST escalate to human after 3 failed iterations",
+    "MUST NOT auto-fix assertion_mismatch or stale_data — these need AI understanding"
+  ]
+}

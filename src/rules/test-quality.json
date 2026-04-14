@@ -1,0 +1,66 @@
+{
+  "id": "test-quality-rules",
+  "version": "1.0.0",
+  "rules": [
+    {
+      "id": "TQ-001",
+      "name": "No trivial assertions",
+      "description": "Tests must validate behavior or data, not mere element existence",
+      "bad_example": "expect(page.locator('.table')).toBeTruthy()",
+      "good_example": "expect(page.locator('[data-testid=\"student-table\"]')).toContainText('Nguyen Van A')",
+      "severity": "error"
+    },
+    {
+      "id": "TQ-002",
+      "name": "No arbitrary waits",
+      "description": "Never use page.waitForTimeout() without a preceding condition wait",
+      "bad_example": "await page.waitForTimeout(3000)",
+      "good_example": "await page.waitForResponse('**/homeroom_notebooks/**'); await page.waitForLoadState('networkidle')",
+      "severity": "error"
+    },
+    {
+      "id": "TQ-003",
+      "name": "Evidence capture required",
+      "description": "Every test must capture at least one screenshot or network log as evidence",
+      "check": "test body must contain page.screenshot() OR page.waitForResponse() with capture",
+      "severity": "error"
+    },
+    {
+      "id": "TQ-004",
+      "name": "Error path coverage",
+      "description": "For every positive test, there must be a corresponding negative/error test",
+      "check": "count(type=positive) <= count(type=negative) + count(type=error_state)",
+      "severity": "warning"
+    },
+    {
+      "id": "TQ-005",
+      "name": "Cleanup required for mutations",
+      "description": "Tests that create or modify data must clean up or use unique identifiers",
+      "check": "if test contains POST/PATCH/PUT/DELETE, must have afterEach/afterAll cleanup",
+      "severity": "error"
+    },
+    {
+      "id": "TQ-006",
+      "name": "Vietnamese text assertions",
+      "description": "Text assertions involving Vietnamese must use exact UTF-8 strings, not regex approximations",
+      "bad_example": "expect(text).toMatch(/Luu thanh cong/)",
+      "good_example": "await expect(page.locator('.toast')).toContainText('Lưu thành công')",
+      "severity": "error"
+    },
+    {
+      "id": "TQ-007",
+      "name": "Assertion specificity",
+      "description": "Assertions must check specific values, not just that something changed",
+      "bad_example": "const countAfter = await rows.count(); expect(countAfter).not.toBe(countBefore)",
+      "good_example": "const countAfter = await rows.count(); expect(countAfter).toBe(countBefore + 1)",
+      "severity": "warning"
+    },
+    {
+      "id": "TQ-008",
+      "name": "Independent tests",
+      "description": "Each test must be runnable in isolation. No ordering dependencies between tests.",
+      "check": "No test.describe.serial unless explicitly justified",
+      "severity": "error"
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "id": "ux-validation",
+  "name": "UX Validation Agent",
+  "role": "Evaluates the user experience quality of SCN flows by analyzing execution traces, screenshots, and timing data. Identifies confusing states, missing feedback, unnecessary steps, and accessibility issues.",
+  "input_schema": {
+    "type": "object",
+    "required": ["execution_traces", "screenshots", "feature_map"],
+    "properties": {
+      "execution_traces": {
+        "type": "array",
+        "description": "Playwright traces with timing data"
+      },
+      "screenshots": {
+        "type": "array",
+        "description": "Before/after screenshots for each interaction"
+      },
+      "feature_map": {
+        "type": "object",
+        "description": "Feature map for understanding expected flows"
+      },
+      "har_logs": {
+        "type": "array",
+        "description": "HAR files for measuring API response times"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["findings"],
+    "properties": {
+      "findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "category", "severity", "description", "evidence", "recommendation"],
+          "properties": {
+            "id": { "type": "string" },
+            "category": {
+              "type": "string",
+              "enum": [
+                "missing_loading_state",
+                "missing_error_feedback",
+                "missing_success_feedback",
+                "confusing_state",
+                "unnecessary_step",
+                "accessibility",
+                "performance",
+                "data_loss_risk",
+                "unclear_action",
+                "broken_flow"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "enum": ["critical", "high", "medium", "low"]
+            },
+            "description": { "type": "string" },
+            "evidence": {
+              "type": "object",
+              "properties": {
+                "screenshot": { "type": "string" },
+                "timing_ms": { "type": "number" },
+                "user_action": { "type": "string" },
+                "expected_feedback": { "type": "string" },
+                "actual_feedback": { "type": "string" }
+              }
+            },
+            "section": { "type": "string" },
+            "recommendation": { "type": "string" }
+          }
+        }
+      },
+      "ux_score": {
+        "type": "object",
+        "properties": {
+          "feedback_coverage": { "type": "number", "description": "% of actions with visible feedback" },
+          "loading_coverage": { "type": "number", "description": "% of async ops with loading indicator" },
+          "error_handling_coverage": { "type": "number", "description": "% of error cases with user message" },
+          "flow_efficiency": { "type": "number", "description": "Ratio of necessary vs total clicks" }
+        }
+      }
+    }
+  },
+  "constraints": [
+    "MUST only evaluate what was actually observed in execution, not theoretical UX",
+    "MUST measure actual response times from HAR, not estimated",
+    "MUST check every async operation for loading indicator",
+    "MUST check every form submit for success/error feedback",
+    "MUST check dirty guard activates on every editable section",
+    "MUST evaluate keyboard navigation accessibility",
+    "MUST check empty states for sections with no data",
+    "MUST NOT penalize intentional design choices without evidence of user confusion"
+  ],
+  "failure_conditions": [
+    "Finding cites 'missing loading state' without checking if loading spinner exists in DOM",
+    "Finding cites timing issue without HAR-measured response time"
+  ],
+  "ux_checklist": [
+    "Every button click that triggers API: does loading spinner appear?",
+    "Every save operation: is success/failure communicated to user?",
+    "Every section with no data: is empty state helpful?",
+    "Section navigation: does dirty guard fire when data is modified?",
+    "Inline edit: does cell highlight during editing?",
+    "Form validation: are validation errors shown near the field?",
+    "Long tables: is pagination or scroll implemented?",
+    "Mobile view: are all interactions reachable?",
+    "Keyboard: can user navigate without mouse?",
+    "Permission: is non-editable state clearly indicated (not just disabled)?"
+  ]
+}

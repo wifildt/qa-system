@@ -1,0 +1,67 @@
+{
+  "id": "anti-hallucination-rules",
+  "version": "1.0.0",
+  "description": "Rules to prevent AI agents from producing invalid, untestable, or misleading output",
+  "rules": [
+    {
+      "id": "AH-001",
+      "name": "No AI pass/fail judgment",
+      "description": "AI agents generate tests and analyze results. Only the execution engine determines pass/fail.",
+      "enforcement": "Report generator must only use execution_results.status, never AI assessment",
+      "severity": "critical"
+    },
+    {
+      "id": "AH-002",
+      "name": "Evidence-backed claims only",
+      "description": "Every finding must reference a specific artifact (screenshot path, HAR entry, log line)",
+      "enforcement": "Report generator rejects findings with empty evidence object",
+      "severity": "critical"
+    },
+    {
+      "id": "AH-003",
+      "name": "Code-verified selectors only",
+      "description": "UI test agent must verify selectors exist in source code before using them",
+      "enforcement": "Before generating test, grep source for the selector/data-testid/aria-label",
+      "severity": "error"
+    },
+    {
+      "id": "AH-004",
+      "name": "No invented API contracts",
+      "description": "API test agent must only test endpoints found in apis.js, never fabricated ones",
+      "enforcement": "Cross-reference every endpoint path with store/modules/homeroomNotebook/apis.js",
+      "severity": "critical"
+    },
+    {
+      "id": "AH-005",
+      "name": "State shape from source of truth",
+      "description": "State validation must use the actual initialState from reducer.js, not assumed shape",
+      "enforcement": "State agent must read reducer.js and extract initialState before generating tests",
+      "severity": "error"
+    },
+    {
+      "id": "AH-006",
+      "name": "Confidence tagging",
+      "description": "AI findings that lack complete evidence must be tagged with confidence level",
+      "levels": {
+        "confirmed": "Evidence from execution proves this",
+        "likely": "Evidence strongly suggests this but alternate explanation exists",
+        "suspected": "Limited evidence, needs manual verification"
+      },
+      "enforcement": "Report must include confidence field. Only 'confirmed' issues count toward metrics."
+    },
+    {
+      "id": "AH-007",
+      "name": "Self-validation loop",
+      "description": "After generating tests, run them once. If >50% fail with selector/timeout errors (not assertion failures), regenerate.",
+      "enforcement": "Orchestrator checks first-run failure types. Selector/infrastructure failures trigger regeneration.",
+      "max_retries": 2
+    },
+    {
+      "id": "AH-008",
+      "name": "No assumed user data",
+      "description": "Tests must not assume specific student names, class names, or IDs exist in the system",
+      "enforcement": "Tests must query first, then assert on returned data",
+      "severity": "error"
+    }
+  ]
+}

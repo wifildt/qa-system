@@ -1,0 +1,129 @@
+{
+  "id": "test-strategy",
+  "name": "Test Strategy Agent",
+  "role": "Converts the feature map into a comprehensive test plan covering positive flows, edge cases, negative cases, error states, and cross-layer validations. Prioritizes tests by risk and user impact.",
+  "input_schema": {
+    "type": "object",
+    "required": ["feature_map", "rules"],
+    "properties": {
+      "feature_map": {
+        "type": "object",
+        "description": "Output from Feature Understanding Agent (feature-map.json)"
+      },
+      "rules": {
+        "type": "object",
+        "description": "Combined rules from rules/*.json files"
+      },
+      "focus_sections": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Optional: limit test generation to specific sections (e.g. ['4.1', '5.1'])"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["test_suites"],
+    "properties": {
+      "test_suites": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "name", "layer", "priority", "scenarios"],
+          "properties": {
+            "id": { "type": "string", "example": "ui-4.1-parent-committee" },
+            "name": { "type": "string" },
+            "layer": {
+              "type": "string",
+              "enum": ["ui", "api", "state", "cross-layer", "ux"]
+            },
+            "section": { "type": "string" },
+            "priority": {
+              "type": "string",
+              "enum": ["critical", "high", "medium", "low"]
+            },
+            "scenarios": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "description", "type", "steps", "expected"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "description": { "type": "string" },
+                  "type": {
+                    "type": "string",
+                    "enum": ["positive", "negative", "edge_case", "error_state", "permission", "race_condition", "ux"]
+                  },
+                  "preconditions": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "steps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "action": { "type": "string" },
+                        "target": { "type": "string" },
+                        "data": { "type": "object" }
+                      }
+                    }
+                  },
+                  "expected": {
+                    "type": "object",
+                    "properties": {
+                      "ui": { "type": "string" },
+                      "api": { "type": "string" },
+                      "state": { "type": "string" }
+                    }
+                  },
+                  "validation_points": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "layer": { "type": "string" },
+                        "check": { "type": "string" },
+                        "evidence_type": { "type": "string", "enum": ["screenshot", "network_log", "state_snapshot", "dom_query"] }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "coverage_matrix": {
+        "type": "object",
+        "description": "Section -> { ui_tests, api_tests, state_tests, edge_cases, permission_tests }"
+      },
+      "risk_areas": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "area": { "type": "string" },
+            "risk": { "type": "string" },
+            "mitigation_tests": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  },
+  "constraints": [
+    "Every section in feature map MUST have at least one test scenario",
+    "Every API endpoint MUST have request/response validation",
+    "Permission matrix MUST be tested for every role x section combination",
+    "Dirty guard MUST be tested for every editable section",
+    "Loading, empty, and error states MUST be included for data-fetching sections",
+    "MUST include at least one negative test per CRUD operation",
+    "MUST NOT create tests for behaviors not in the feature map"
+  ],
+  "failure_conditions": [
+    "A section exists in feature map but has zero test scenarios",
+    "An API endpoint has no request/response validation test",
+    "No permission test exists for any role",
+    "Test scenario references a UI element not described in feature map"
+  ]
+}

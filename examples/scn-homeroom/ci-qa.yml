@@ -1,0 +1,206 @@
+# =============================================================================
+# GitHub Actions: SCN QA System (v2 — Closed-Loop with Enforcement + Healing)
+#
+# Pipeline:
+#   1. VALIDATE — Non-AI rule enforcement (blocks bad tests)
+#   2. EXECUTE  — Playwright + Vitest
+#   3. HEAL     — Auto-fix + regeneration queue
+#   4. REPORT   — Aggregate + PR comment
+#
+# Triggers: on PR to main/develop (SCN files changed), manual dispatch
+# =============================================================================
+
+name: SCN QA System
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'src/Pages/Teacher/HomeroomBook/**'
+      - 'src/store/modules/homeroomNotebook/**'
+      - 'qa-system/test/**'
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'Pipeline phase to run'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - validate
+          - execute
+      max_heal_iterations:
+        description: 'Max self-healing iterations'
+        required: false
+        default: '2'
+        type: string
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: VALIDATE (fast, no browser — gate for execution)
+  # ---------------------------------------------------------------------------
+  validate:
+    name: Validate Tests (Rule Enforcement)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      validation_passed: ${{ steps.validate.outputs.passed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Run Validation Engine
+        id: validate
+        run: |
+          cd qa-system
+          npx tsx scripts/validation-engine.ts --all 2>&1 | tee reports/validation-output.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-results
+          path: |
+            qa-system/reports/validation-report.json
+            qa-system/reports/validation-output.log
+
+  # ---------------------------------------------------------------------------
+  # Job 2: EXECUTE + HEAL (full orchestrator pipeline)
+  # ---------------------------------------------------------------------------
+  execute:
+    name: Execute & Heal
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: needs.validate.outputs.validation_passed == 'true'
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Orchestrator (Execute + Heal)
+        run: |
+          cd qa-system
+          npx tsx scripts/orchestrator.ts \
+            --phase execute \
+            --max-iterations ${{ inputs.max_heal_iterations || '2' }} \
+            2>&1 | tee reports/orchestrator-output.log || true
+
+      - name: Run Self-Healing if tests failed
+        if: always()
+        run: |
+          cd qa-system
+          if [ -f reports/execution-results.json ]; then
+            npx tsx scripts/self-healing-agent.ts reports/execution-results.json \
+              2>&1 | tee reports/healing-output.log || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: execution-results
+          path: |
+            qa-system/reports/
+            qa-system/test-results/
+
+  # ---------------------------------------------------------------------------
+  # Job 3: REPORT + PR Comment
+  # ---------------------------------------------------------------------------
+  report:
+    name: Generate Report & Comment
+    runs-on: ubuntu-latest
+    needs: [validate, execute]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: qa-system/artifacts/
+
+      - name: Generate PR summary
+        run: |
+          cd qa-system
+
+          # Parse results
+          VALIDATION=$(cat artifacts/validation-results/validation-report.json 2>/dev/null || echo '{}')
+          VAL_PASSED=$(echo "$VALIDATION" | jq '.passed // 0')
+          VAL_BLOCKED=$(echo "$VALIDATION" | jq '.blocked // 0')
+
+          HEALING=$(cat artifacts/execution-results/reports/healing-report.json 2>/dev/null || echo '{}')
+          HEAL_FIXED=$(echo "$HEALING" | jq '.autoFixed // 0')
+          HEAL_REGEN=$(echo "$HEALING" | jq '.needsRegeneration // 0')
+
+          PIPELINE=$(cat artifacts/execution-results/reports/pipeline-result.json 2>/dev/null || echo '{}')
+          OUTCOME=$(echo "$PIPELINE" | jq -r '.outcome // "unknown"')
+          SUMMARY=$(echo "$PIPELINE" | jq -r '.summary // "No summary"')
+          DURATION=$(echo "$PIPELINE" | jq -r '.duration_ms // 0')
+
+          # Build markdown
+          cat > reports/pr-comment.md << 'HEADER'
+          ## SCN QA Report
+
+          HEADER
+
+          echo "| Metric | Value |" >> reports/pr-comment.md
+          echo "|--------|-------|" >> reports/pr-comment.md
+          echo "| Outcome | \`${OUTCOME}\` |" >> reports/pr-comment.md
+          echo "| Validation | ${VAL_PASSED} passed, ${VAL_BLOCKED} blocked |" >> reports/pr-comment.md
+          echo "| Self-Healing | ${HEAL_FIXED} auto-fixed, ${HEAL_REGEN} need regen |" >> reports/pr-comment.md
+          echo "| Duration | $((DURATION / 1000))s |" >> reports/pr-comment.md
+          echo "" >> reports/pr-comment.md
+          echo "> ${SUMMARY}" >> reports/pr-comment.md
+          echo "" >> reports/pr-comment.md
+          echo "**Branch**: ${{ github.head_ref || github.ref_name }}" >> reports/pr-comment.md
+          echo "**Commit**: \`${{ github.sha }}\`" >> reports/pr-comment.md
+          echo "" >> reports/pr-comment.md
+
+          if [ "$VAL_BLOCKED" -gt 0 ]; then
+            echo "### Validation Violations" >> reports/pr-comment.md
+            echo '```' >> reports/pr-comment.md
+            cat artifacts/validation-results/validation-output.log 2>/dev/null | tail -30 >> reports/pr-comment.md
+            echo '```' >> reports/pr-comment.md
+          fi
+
+          if [ "$HEAL_REGEN" -gt 0 ]; then
+            echo "### Tests Needing Regeneration" >> reports/pr-comment.md
+            echo "$HEALING" | jq -r '.regenerationQueue[]? | "- \(.testFile): \(.context)"' >> reports/pr-comment.md
+          fi
+
+          echo "" >> reports/pr-comment.md
+          echo "_Full report in workflow artifacts._" >> reports/pr-comment.md
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: scn-qa-report
+          path: qa-system/reports/pr-comment.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-report-final
+          path: qa-system/reports/
