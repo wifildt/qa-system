@@ -104,3 +104,40 @@ Each engine reads/writes JSON databases in `qa-system/`:
 2. Export from `src/index.ts`
 3. Add CLI command in `bin/qa-cli.ts` (use lazy `await import()`)
 4. Add runtime DB filename to `.gitignore` if applicable
+
+## Release / Publish Checklist
+
+**MUST run this checklist before every `npm publish`.** Do not skip steps.
+
+```
+1. Audit code
+   - grep for hardcoded paths (/Users/, localhost, etc.)
+   - grep for credentials/secrets in published files
+   - verify package.json "files" includes all runtime assets (dist/, src/rules/, src/prompts/, src/agents/, presets/)
+   - verify no qa-system/ or test data in published files
+
+2. Version
+   - bump version in package.json (semver: patch/minor/major)
+   - PATCH: bug fix, no API change
+   - MINOR: new feature, backward compatible
+   - MAJOR: breaking change (config format, CLI flags removed)
+
+3. Build + verify
+   - npm run build                     (tsc → dist/)
+   - node dist/bin/qa-cli.js help      (CLI works from dist?)
+   - npm pack --dry-run                (check file list + size)
+
+4. Docs
+   - README.md: package name, install command, CLI table, version
+   - CLAUDE.md: commands list matches actual CLI
+   - ARCHITECTURE.md: engine count, phase count, agent registry
+
+5. Git
+   - git add + commit with "release: vX.Y.Z"
+   - git tag vX.Y.Z
+   - git push origin main --tags
+
+6. Publish
+   - npm publish --access public
+   - verify: npm view @ldtdev/qa-system versions
+```
