@@ -148,14 +148,25 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
   const { execSync } = await import('child_process');
 
   const qaDir = configPath ? path.dirname(configPath) : path.resolve('qa-system');
-  const projectName = configPath ? path.basename(configPath, '.config.json') : 'default';
   const cfgPath = configPath || path.join(qaDir, 'project.config.json');
   const skipGenerate = flags['skip-generate'] === true;
   const skipExecute = flags['skip-execute'] === true;
+  const modelOverride = flags['model'] as string | undefined;
+
+  // Read project name from config if available
+  let projectName = 'default';
+  if (fs.existsSync(cfgPath)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      projectName = cfg.project?.name || projectName;
+    } catch { /* use default */ }
+  }
 
   console.log(`\n${BOLD}QA Framework — Full Pipeline${RESET}`);
-  console.log(`${DIM}generate → validate → execute → heal → learn → evolve${RESET}`);
-  console.log(`Project: ${CYAN}${projectName}${RESET}\n`);
+  console.log(`${DIM}generate → validate → execute → heal → learn → evolve → summary${RESET}`);
+  console.log(`Project: ${CYAN}${projectName}${RESET}`);
+  if (modelOverride) console.log(`Model: ${CYAN}${modelOverride}${RESET}`);
+  console.log();
 
   // ── Phase 1: Generate (optional) ──────────────────────────────────
   if (!skipGenerate && fs.existsSync(cfgPath)) {
@@ -166,7 +177,7 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
     const tasks = buildTestGenerationTasks(cfgPath, SRC_DIR.replace('/src', ''));
 
     if (tasks.length > 0) {
-      const runner = new ClaudeCodeRunner({ projectRoot, frameworkRoot: SRC_DIR.replace('/src', '') });
+      const runner = new ClaudeCodeRunner({ projectRoot, frameworkRoot: SRC_DIR.replace('/src', ''), model: modelOverride });
       const results = await runner.runPipeline(tasks);
       const passed = results.filter(r => r.success).length;
       const failed = results.filter(r => !r.success).length;
