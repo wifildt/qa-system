@@ -279,6 +279,63 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
     }
   }
 
+  // ── Phase 7: Summary (sonnet reads reports → human-readable summary) ──
+  console.log(`\n${YELLOW}[Phase 7/7] Generating summary...${RESET}`);
+  try {
+    const { ClaudeCodeRunner } = await import('../src/engine/claude-code-runner.js');
+    const reportsDir = path.join(qaDir, 'reports');
+
+    // Collect all available report data
+    const reportData: string[] = ['QA Pipeline Run Summary Data:'];
+
+    const valJson = readJson(path.join(reportsDir, 'validation-report.json'));
+    if (valJson) reportData.push(`\n--- Validation Report ---\n${JSON.stringify(valJson, null, 2).slice(0, 2000)}`);
+
+    const execJson = readJson(path.join(reportsDir, 'execution-results.json'));
+    if (execJson) reportData.push(`\n--- Execution Results ---\n${JSON.stringify(execJson, null, 2).slice(0, 3000)}`);
+
+    const healJson = readJson(path.join(reportsDir, 'healing-report.json'));
+    if (healJson) reportData.push(`\n--- Healing Report ---\n${JSON.stringify(healJson, null, 2).slice(0, 2000)}`);
+
+    const expStats = lib.stats;
+    reportData.push(`\n--- Experience Library ---\n${JSON.stringify(expStats, null, 2)}`);
+
+    const evolveStats = {
+      activeMutations: evolution.activeMutations.length,
+      newMutations: evolution.newMutations.map(m => `${m.concern}: ${m.from} → ${m.to}`),
+      revertedMutations: evolution.revertedMutations.map(m => `${m.concern}: ${m.from} → ${m.to}`),
+      confirmedMutations: evolution.confirmedMutations.map(m => `${m.concern}: ${m.from} → ${m.to}`),
+    };
+    reportData.push(`\n--- Strategy Evolution ---\n${JSON.stringify(evolveStats, null, 2)}`);
+
+    const runner = new ClaudeCodeRunner({
+      projectRoot: qaDir,
+      model: 'sonnet',
+    });
+
+    const summaryResult = await runner.run({
+      agentType: 'file-reader',
+      prompt: [
+        'Read the QA pipeline data below and write a concise summary to stdout.',
+        'Format: short paragraphs, use numbers. Vietnamese OK.',
+        'Include: total tests, pass/fail count, what was auto-healed, what was learned, any strategy mutations.',
+        'Keep it under 300 words. Do NOT write any files.',
+        '',
+        reportData.join('\n'),
+      ].join('\n'),
+      allowedTools: ['Read'],
+    });
+
+    if (summaryResult.success && summaryResult.output) {
+      console.log(`\n${BOLD}━━━ Pipeline Summary ━━━${RESET}\n`);
+      console.log(summaryResult.output.trim());
+      console.log(`\n${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━${RESET}`);
+    }
+  } catch {
+    // Summary is optional — don't fail pipeline if claude CLI unavailable
+    console.log(`${DIM}(Summary skipped — claude CLI not available)${RESET}`);
+  }
+
   console.log(`\n${GREEN}${BOLD}Pipeline complete.${RESET}`);
 }
 
@@ -499,7 +556,7 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}qa detect${RESET} <repo-path>            Scan repo, auto-detect conventions, generate config
   ${CYAN}qa init${RESET}                          Create qa-system/ directory in current project
   ${CYAN}qa validate${RESET} [--config <path>]     Validate test files against quality rules
-  ${CYAN}qa run${RESET} [--config <path>]          Full pipeline: generate → validate → execute → heal → learn → evolve
+  ${CYAN}qa run${RESET} [--config <path>]          Full pipeline: generate → validate → execute → heal → learn → evolve → summary
   ${CYAN}qa heal${RESET} <results.json>            Self-heal failed tests from execution results
   ${CYAN}qa experience${RESET} [--stats|--query]   View experience library
   ${CYAN}qa generate${RESET} [--config <path>]       Generate tests via Claude Code CLI
