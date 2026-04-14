@@ -17,10 +17,12 @@ npm run build                 # tsc → dist/
 npm run test                  # vitest run
 npm run lint                  # eslint src/
 
-# CLI commands (via tsx)
+# CLI commands (via tsx in dev, or `qa` after npm install -g)
 npx tsx bin/qa-cli.ts detect <repo-path>
+npx tsx bin/qa-cli.ts generate --config <path>
 npx tsx bin/qa-cli.ts validate --config <path>
 npx tsx bin/qa-cli.ts run --config <path>
+npx tsx bin/qa-cli.ts run --config <path> --model opus
 npx tsx bin/qa-cli.ts heal <results.json>
 npx tsx bin/qa-cli.ts experience --stats
 npx tsx bin/qa-cli.ts experience --query selector,modal
@@ -43,11 +45,13 @@ tsconfig: `module: "ESNext"`, `target: "ES2022"`, `moduleResolution: "bundler"`,
 
 ## Architecture
 
-Self-learning multi-agent QA framework. 9 engine modules form a feedback loop:
+Self-learning multi-agent QA framework. 10 engine modules form a feedback loop:
 
 ```
 Experience Library ←──────────────────────────────┐
     │                                              │
+    ├→ Claude Code Runner (generate tests via CLI) │
+    │   └→ injects experience + mutations          │
     ├→ Prompt Evolution (inject lessons into AI)   │
     ├→ Strategy Evolution (mutate test approach)   │
     └→ Rule Scoring (prune rules + agents)         │

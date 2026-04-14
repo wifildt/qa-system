@@ -1,18 +1,32 @@
-# QA Agent Framework
+# @ldtdev/qa-system
 
-Self-learning, multi-agent QA framework for frontend applications.
+Self-learning QA framework for frontend applications.
 
-Drop any frontend repo → auto-detect conventions → generate tests → execute → self-heal → evolve strategy → learn.
+Drop any frontend repo → detect conventions → generate tests → validate → execute → self-heal → learn → evolve strategy.
+
+## Prerequisites
+
+- Node.js >= 20
+- [Claude Code CLI](https://claude.ai/code) (for `qa generate` / `qa run`)
+- Playwright (installed automatically)
 
 ## Quick Start
 
 ```bash
+# Install globally
+npm install -g @ldtdev/qa-system
+
 # In your frontend project
-npx qa-agent-framework init
-npx qa-agent-framework detect .
-# → edit qa-system/project.config.json (add auth, features)
-npx qa-agent-framework validate
-npx qa-agent-framework run
+cd my-frontend-app
+qa init
+qa detect .
+# → edit qa-system/project.config.json (add auth accounts, features, entry URLs)
+
+# Full pipeline (generate → validate → execute → heal → learn → evolve)
+qa run --config qa-system/project.config.json
+
+# Or best quality
+qa run --config qa-system/project.config.json --model opus
 ```
 
 ## Architecture
@@ -104,13 +118,15 @@ NOT a log dump. 4 categories of curated knowledge:
 | Anti-Pattern | "CSS class selector in test" → always breaks on style change |
 | Feature Knowledge | "dirty guard missing in section 4.1" → data loss risk |
 
-Confidence scores decay 0.2%/day. Max 500 entries with eviction.
+Confidence scores decay 0.5%/day. Single-use experiences decay 2x faster. Max 500 entries with eviction.
+
+Run 1 uses base prompts only. Run 2+ injects experience + strategy mutations into generate prompts automatically.
 
 ## Multi-Repo
 
 ```bash
 # Auto-detect any frontend repo
-npx qa-agent-framework detect /path/to/any-repo
+qa detect /path/to/any-repo
 # → generates project.config.json
 
 # Presets for common stacks
@@ -127,13 +143,15 @@ Convention Detector auto-detects 15 properties: framework, bundler, UI library, 
 |---------|-------------|
 | `qa init` | Create qa-system/ in current project |
 | `qa detect <path>` | Auto-detect conventions, generate config |
+| `qa generate` | Generate tests via Claude Code CLI |
 | `qa validate` | Validate test files against quality rules |
-| `qa run` | Full pipeline: validate → execute → heal → learn → evolve |
+| `qa run` | Full pipeline: generate → validate → execute → heal → learn → evolve |
+| `qa run --skip-generate` | Skip AI generation, run from validate onwards |
 | `qa heal <results.json>` | Self-heal from execution results |
 | `qa experience --stats` | View experience library stats |
-| `qa experience --query selector,modal` | Search experiences by tags |
-| `qa evolve` | Run strategy evolution (detect + apply mutations) |
 | `qa evolve --report` | View mutation history + baseline failure rates |
+
+**Model options:** Default `sonnet/high`. For best quality: `qa run --model opus`
 
 ## Project Config
 
@@ -161,10 +179,11 @@ Single file drives the entire system:
 
 ```
 qa-agent-framework/
-├── bin/qa-cli.ts                  CLI entry point (7 commands)
+├── bin/qa-cli.ts                  CLI entry point (8 commands)
 ├── src/
 │   ├── index.ts                   Public API exports
 │   ├── engine/
+│   │   ├── claude-code-runner.ts  AI integration via Claude Code CLI
 │   │   ├── convention-detector.ts Auto-detect repo conventions
 │   │   ├── project-adapter.ts     Normalize config for agents
 │   │   ├── validation-engine.ts   Non-AI rule enforcement
@@ -173,6 +192,7 @@ qa-agent-framework/
 │   │   ├── experience-extractor.ts Raw data → curated insights
 │   │   ├── prompt-evolution.ts    Evolve prompts from experience
 │   │   ├── strategy-evolution.ts  Mutate test approach from failure patterns
+│   │   ├── paths.ts               Portable path resolution (dev + dist + npm)
 │   │   └── rule-scoring.ts        Rule precision + agent pruning
 │   ├── agents/                    Agent definitions (JSON schemas)
 │   ├── rules/                     Validation rules (5 sets, 38 rules)
