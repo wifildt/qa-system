@@ -2,7 +2,7 @@
 
 Self-learning, multi-agent QA framework for frontend applications.
 
-Drop any frontend repo → auto-detect conventions → generate tests → execute → self-heal → learn.
+Drop any frontend repo → auto-detect conventions → generate tests → execute → self-heal → evolve strategy → learn.
 
 ## Quick Start
 
@@ -49,11 +49,16 @@ npx qa-agent-framework run
     │          ┌──────v───────┐        │
     │          │  EXPERIENCE  │        │
     │          │  EXTRACTOR   │← curates insights, not logs
+    │          └──────┬───────┘        │
+    │                 │                │
+    │          ┌──────v───────┐        │
+    │          │  STRATEGY    │        │
+    │          │  EVOLUTION   │← mutates test approach
     │          └──────────────┘        │
     └──────────────────────────────────┘
 ```
 
-## 11 Agents
+## 12 Agents
 
 | # | Agent | Type | Purpose |
 |---|-------|------|---------|
@@ -68,14 +73,25 @@ npx qa-agent-framework run
 | 9 | Report Generator | AI | HTML/JSON reports |
 | 10 | **Validation Engine** | **Non-AI** | **Blocks bad tests (10 rules)** |
 | 11 | **Self-Healing Agent** | **Hybrid** | **Auto-fixes + learns** |
+| 12 | **Strategy Evolution** | **Non-AI** | **Mutates test approach based on failure patterns** |
 
-## 3 Feedback Loops
+## 4 Feedback Loops
 
 **Loop 1 — Enforcement**: AI generates test → Validation Engine parses → BLOCK or PASS
 
 **Loop 2 — Self-Healing**: Test fails → classify → auto-fix (selector/timeout/auth) → re-run. Can't fix? → queue for AI regen. Same fix failed 2x? → learning DB skips it.
 
 **Loop 3 — Learning**: Run completes → Experience Extractor → curated insights → Experience Library → Prompt Evolution injects lessons into next run's AI prompts.
+
+**Loop 4 — Strategy Evolution**: Failure patterns cross threshold (5+ occurrences, 60%+ confidence) → system switches testing approach entirely. Mutations are reversible — auto-revert if failure rate increases within 3 runs.
+
+| Failure Pattern | Strategy Mutation |
+|---|---|
+| Selector flaky | `dom-selector` → `api-first` |
+| Async race conditions | `dom-selector` → `state-driven` |
+| Auth token expired | `dom-selector` → `network-interception` |
+| Network errors | `dom-selector` → `contract-testing` |
+| Cross-layer mismatch | `dom-selector` → `hybrid-ui-api` |
 
 ## Experience Library
 
@@ -112,10 +128,12 @@ Convention Detector auto-detects 15 properties: framework, bundler, UI library, 
 | `qa init` | Create qa-system/ in current project |
 | `qa detect <path>` | Auto-detect conventions, generate config |
 | `qa validate` | Validate test files against quality rules |
-| `qa run` | Full pipeline: validate → execute → heal → learn |
+| `qa run` | Full pipeline: validate → execute → heal → learn → evolve |
 | `qa heal <results.json>` | Self-heal from execution results |
 | `qa experience --stats` | View experience library stats |
 | `qa experience --query selector,modal` | Search experiences by tags |
+| `qa evolve` | Run strategy evolution (detect + apply mutations) |
+| `qa evolve --report` | View mutation history + baseline failure rates |
 
 ## Project Config
 
@@ -143,7 +161,7 @@ Single file drives the entire system:
 
 ```
 qa-agent-framework/
-├── bin/qa-cli.ts                  CLI entry point
+├── bin/qa-cli.ts                  CLI entry point (7 commands)
 ├── src/
 │   ├── index.ts                   Public API exports
 │   ├── engine/
@@ -154,6 +172,7 @@ qa-agent-framework/
 │   │   ├── experience-library.ts  Structured memory (4 categories)
 │   │   ├── experience-extractor.ts Raw data → curated insights
 │   │   ├── prompt-evolution.ts    Evolve prompts from experience
+│   │   ├── strategy-evolution.ts  Mutate test approach from failure patterns
 │   │   └── rule-scoring.ts        Rule precision + agent pruning
 │   ├── agents/                    Agent definitions (JSON schemas)
 │   ├── rules/                     Validation rules (5 sets, 38 rules)

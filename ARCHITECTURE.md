@@ -1,20 +1,21 @@
-# QA System — Production Architecture (v3: Self-Learning / Hera-Level)
+# QA System — Production Architecture (v4: Strategy Evolution)
 
 ## System Overview
 
-A multi-agent, execution-backed, **self-learning** QA system for validating the full
-Homeroom Notebook (So Chu Nhiem / SCN) feature across UI, API, state, and UX layers.
+A multi-agent, execution-backed, **self-learning** QA system for validating frontend
+applications across UI, API, state, and UX layers.
 
-**Four core principles**:
+**Five core principles**:
 1. **No assertion without execution evidence** — AI agents analyze and generate, never mark pass/fail
 2. **No test runs without enforcement** — Validation Engine BLOCKS bad tests before execution
 3. **No failure without feedback** — Self-Healing Agent fixes or escalates every failure
 4. **No run without learning** — Experience Library captures insights, Prompt Evolution applies them
+5. **No repeated failure without strategy change** — Strategy Evolution mutates test approach when patterns persist
 
 ```
                     ┌──────────────────────────────┐
                     │       ORCHESTRATOR            │
-                    │  (scripts/orchestrator.ts)    │
+                    │  (bin/qa-cli.ts)              │
                     └──────┬───────────────────────┘
                            │
               Phase 1-2: UNDERSTAND + PLAN
@@ -35,7 +36,7 @@ Homeroom Notebook (So Chu Nhiem / SCN) feature across UI, API, state, and UX lay
           │                │                │
           └────────────────┼────────────────┘
                            │
-              Phase 4: ENFORCE (Non-AI) ← NEW
+              Phase 4: ENFORCE (Non-AI)
                            │
                 ┌──────────v──────────┐
                 │  VALIDATION ENGINE  │
@@ -55,7 +56,7 @@ Homeroom Notebook (So Chu Nhiem / SCN) feature across UI, API, state, and UX lay
                 │  Playwright/Vitest  │──→ screenshots, traces, HAR
                 └──────────┬──────────┘
                            │
-              Phase 6: HEAL (Hybrid) ← NEW
+              Phase 6: HEAL (Hybrid)
                            │
                 ┌──────────v──────────┐
                 │  SELF-HEALING AGENT │
@@ -78,6 +79,30 @@ Homeroom Notebook (So Chu Nhiem / SCN) feature across UI, API, state, and UX lay
     │ Consistency│  │ UX Valid.  │  │ Report Gen. │
     │ Analyzer   │  │ Agent      │  │ Agent       │
     └────────────┘  └────────────┘  └─────────────┘
+                           │
+              Phase 8: LEARN
+                           │
+                ┌──────────v──────────┐
+                │ EXPERIENCE EXTRACTOR│
+                │ raw results →       │──→ experience-db.json
+                │ curated insights    │
+                └──────────┬──────────┘
+                           │
+              Phase 9: EVOLVE (New)
+                           │
+                ┌──────────v──────────┐
+                │ STRATEGY EVOLUTION  │
+                │                     │
+                │ Aggregate failure   │
+                │ patterns → detect   │
+                │ mutation triggers   │──→ strategy-evolution-db.json
+                │ → mutate test       │
+                │ approach            │
+                │                     │
+                │ + PROMPT EVOLUTION  │──→ evolved prompts for
+                │   injects mutations │    next run (Phase 2-3)
+                │   + experience      │
+                └─────────────────────┘
                            │
                            v
                     ┌─────────────┐
@@ -116,22 +141,39 @@ Loop 3: LEARNING FEEDBACK (system improves over time)
                                 │ same fix failed 2x?
                                 v
                          Skip fix, try different strategy
+
+Loop 4: STRATEGY EVOLUTION (system changes HOW it tests)
+  ┌─────────────┐        ┌───────────────┐        ┌────────────────┐
+  │ Experience  │───────→│ Pattern       │───────→│ Strategy       │
+  │ Library     │        │ Aggregator    │        │ Mutation       │
+  └─────────────┘        └───────────────┘        └──────┬─────────┘
+                                                         │
+                          Failure pattern repeated       │ mutate
+                          5+ times, 60%+ confidence      │
+                                                         v
+                                                  ┌────────────────┐
+                                                  │ Test Strategy  │
+                                                  │ Agent prompt   │
+                                                  │ rewritten      │
+                                                  └──────┬─────────┘
+                                                         │
+                                                  Evaluate for 3 runs
+                                                  Auto-revert if worse
 ```
 
 ---
 
-## Data Flow (8 Phases)
+## Data Flow (9 Phases)
 
 ```
 Phase 1: UNDERSTAND
   Feature Understanding Agent
-    reads: src/Pages/Teacher/HomeroomBook/**
-           src/store/modules/homeroomNotebook/**
+    reads: project source code (pages, components, store)
     outputs: qa-system/analysis/feature-map.json
 
 Phase 2: PLAN
   Test Strategy Agent
-    reads: feature-map.json + rules/*.json
+    reads: feature-map.json + rules/*.json + strategy mutations
     outputs: qa-system/analysis/test-plan.json
 
 Phase 3: GENERATE
@@ -139,7 +181,7 @@ Phase 3: GENERATE
   API Test Agent   → qa-system/test/api/*.api.spec.ts
   State Logic Agent → qa-system/test/state/*.state.spec.ts
 
-Phase 4: ENFORCE ← NEW
+Phase 4: ENFORCE
   Validation Engine (non-AI)
     reads: generated test files + rules/*.json
     action: BLOCK files with violations, PASS clean files
@@ -152,7 +194,7 @@ Phase 5: EXECUTE (non-AI)
   Assertion engine  → pass/fail with evidence
   outputs: execution-results.json
 
-Phase 6: HEAL ← NEW
+Phase 6: HEAL
   Self-Healing Agent (hybrid)
     reads: execution-results.json + learning-db.json
     action: auto-fix selectors/timeouts, queue unfixable for regen
@@ -165,9 +207,42 @@ Phase 7: ANALYZE
   Consistency Analyzer → cross-layer mismatches
   UX Validation Agent  → usability findings
 
-Phase 8: REPORT
-  Report Generator → qa-system/reports/scn-report-{date}.html
+Phase 8: LEARN
+  Experience Extractor
+    reads: execution/healing/validation reports
+    outputs: curated entries → experience-db.json
+    NOT raw logs — only actionable patterns
+
+Phase 9: EVOLVE
+  Strategy Evolution Engine
+    reads: experience-db.json (aggregated failure patterns)
+    action: detect mutation triggers → apply strategy changes
+    outputs: strategy-evolution-db.json
+    feedback: mutations injected into Phase 2-3 prompts via Prompt Evolution
+    safety: auto-revert if failure rate increases >1.5x within 3 runs
 ```
+
+---
+
+## Strategy Mutations
+
+When failure patterns persist, the system switches testing approach:
+
+| Trigger | From | To | Example |
+|---------|------|----|---------|
+| Selector flaky 5+ times | `dom-selector` | `api-first` | Assert on API response, not DOM text |
+| Async race conditions | `dom-selector` | `state-driven` | Poll state store, not UI elements |
+| Auth token expired | `dom-selector` | `network-interception` | API-based re-auth, token validation |
+| Network errors | `dom-selector` | `contract-testing` | Mock API, schema validation |
+| Cross-layer data mismatch | `dom-selector` | `hybrid-ui-api` | Compare UI text vs API response |
+
+Each mutation includes:
+- **Prompt patch**: Instructions + code examples injected into agent prompts
+- **Scenario overrides**: New test patterns replacing the old approach
+- **Rule adjustments**: New rules added/modified for the new strategy
+- **Evaluation window**: 3 runs to prove effectiveness
+- **Auto-revert**: If failure rate increases by 1.5x → mutation reverted
+- **Cooldown**: Reverted concerns get 5-run cooldown before retry
 
 ---
 
@@ -176,21 +251,9 @@ Phase 8: REPORT
 | Tool | Purpose |
 |------|---------|
 | Playwright 1.57 | Browser automation, screenshots, traces |
-| Vitest | Test runner (already in project) |
+| Vitest | Test runner |
 | node-fetch / axios | Direct API calls |
 | HAR capture | Network request/response logging |
-| pixelmatch | Visual regression (optional) |
-
----
-
-## Environment
-
-| Key | Value |
-|-----|-------|
-| App URL | https://test.lms360.vn |
-| API Base | https://slldt.lms360.vn/api/ |
-| Auth | Token-based (localStorage) |
-| Test accounts | See fixtures/accounts.json |
 
 ---
 
@@ -200,19 +263,20 @@ Phase 8: REPORT
 2. **Evidence-backed assertions**: Every assertion must reference a concrete value from execution
 3. **Network verification**: API tests capture actual HTTP traffic, not mocked responses
 4. **Screenshot evidence**: UI tests capture before/after screenshots for every interaction
-5. **State snapshots**: Redux state is captured via `window.__REDUX_STORE__` at key points
+5. **State snapshots**: State store is captured at key points via `page.evaluate()`
 6. **Idempotent runs**: Tests must not corrupt data; use read-only checks where possible
 7. **Timeout guards**: All waits have explicit timeouts with descriptive failure messages
 
-## Trust Architecture (v2 additions)
+## Trust Architecture
 
 8. **Validation Engine gates execution**: AI-generated tests CANNOT run until they pass non-AI rule checks
 9. **Self-Healing prevents blind retries**: Failures are classified → auto-fixed OR escalated, never just retried
 10. **Learning DB prevents infinite loops**: If same fix fails 2x on same file, system tries different strategy
 11. **Max 3 heal iterations**: After 3 failed auto-heal attempts, system escalates to human review
-12. **Separation of concerns**: Validation Engine NEVER modifies files (read-only). Self-Healing NEVER changes assertions (only selectors/waits). AI agents NEVER mark pass/fail.
+12. **Strategy mutations are reversible**: Auto-revert within 3 runs if they make things worse
+13. **Separation of concerns**: Validation Engine NEVER modifies files (read-only). Self-Healing NEVER changes assertions (only selectors/waits). AI agents NEVER mark pass/fail. Strategy Evolution NEVER bypasses validation.
 
-## Agent Registry (11 agents)
+## Agent Registry (12 agents)
 
 | # | Agent | Type | Implementation |
 |---|-------|------|----------------|
@@ -225,5 +289,6 @@ Phase 8: REPORT
 | 7 | Consistency Analyzer | AI | Claude prompt |
 | 8 | UX Validation | AI | Claude prompt |
 | 9 | Report Generator | AI | Claude prompt |
-| **10** | **Validation Engine** | **Non-AI** | **scripts/validation-engine.ts** |
-| **11** | **Self-Healing Agent** | **Hybrid** | **scripts/self-healing-agent.ts** |
+| 10 | Validation Engine | Non-AI | src/engine/validation-engine.ts |
+| 11 | Self-Healing Agent | Hybrid | src/engine/self-healing-agent.ts |
+| 12 | Strategy Evolution | Non-AI | src/engine/strategy-evolution.ts |
