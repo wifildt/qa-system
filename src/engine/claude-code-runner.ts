@@ -261,8 +261,9 @@ export class ClaudeCodeRunner {
       '--print',
       '--model', model,
       '--effort', effort,
-      '--output-format', 'text',
+      '--output-format', 'stream-json',
       '--no-session-persistence',
+      '--verbose',
     ];
 
     // Allowed tools — restrict what claude can do
@@ -291,12 +292,56 @@ export class ClaudeCodeRunner {
 
   private execute(prompt: string, args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
-      // Stream stdout+stderr to terminal so user sees progress realtime.
-      // No timeout — user can Ctrl+C if stuck.
       const proc = spawn('claude', args, {
         cwd: this.config.projectRoot,
-        stdio: ['pipe', 'inherit', 'inherit'],
+        stdio: ['pipe', 'pipe', 'inherit'],
         env: { ...process.env },
+      });
+
+      let lastOutput = '';
+
+      // Parse stream-json: each line is a JSON event
+      proc.stdout.on('data', (data) => {
+        const lines = data.toString().split('\n').filter(Boolean);
+        for (const line of lines) {
+          try {
+            const event = JSON.parse(line);
+
+            // Show tool use events (file reads, writes, etc.)
+            if (event.type === 'assistant' && event.subtype === 'tool_use') {
+              const tool = event.tool_name || event.name || '';
+              const input = event.input || {};
+              if (tool === 'Read') {
+                console.log(`  📖 Read: ${input.file_path || ''}`);
+              } else if (tool === 'Write') {
+                console.log(`  ✏️  Write: ${input.file_path || ''}`);
+              } else if (tool === 'Glob') {
+                console.log(`  🔍 Glob: ${input.pattern || ''}`);
+              } else if (tool === 'Grep') {
+                console.log(`  🔎 Grep: ${input.pattern || ''}`);
+              } else if (tool === 'Bash') {
+                console.log(`  💻 Bash: ${(input.command || '').slice(0, 80)}`);
+              } else if (tool) {
+                console.log(`  🔧 ${tool}`);
+              }
+            }
+
+            // Show text output
+            if (event.type === 'assistant' && event.subtype === 'text') {
+              lastOutput += event.text || '';
+            }
+
+            // Show result message
+            if (event.type === 'result') {
+              lastOutput = event.result || lastOutput;
+            }
+          } catch {
+            // Not JSON — raw text output, show as-is
+            if (line.trim()) {
+              console.log(`  ${line.trim().slice(0, 120)}`);
+            }
+          }
+        }
       });
 
       // Send prompt via stdin
@@ -305,7 +350,7 @@ export class ClaudeCodeRunner {
 
       proc.on('close', (code) => {
         if (code === 0) {
-          resolve('');
+          resolve(lastOutput);
         } else {
           reject(new Error(`Claude CLI exited with code ${code}`));
         }
