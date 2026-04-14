@@ -125,8 +125,8 @@ interface StrategyEvolutionDB {
 /** Minimum occurrences before a mutation is considered */
 const MUTATION_FREQUENCY_THRESHOLD = 5;
 
-/** Minimum aggregated confidence to trigger mutation */
-const MUTATION_CONFIDENCE_THRESHOLD = 0.6;
+/** Minimum aggregated confidence to trigger mutation (high bar — avoid noisy triggers) */
+const MUTATION_CONFIDENCE_THRESHOLD = 0.75;
 
 /** If failure rate increases by this ratio after mutation, auto-revert */
 const REVERT_FAILURE_INCREASE_RATIO = 1.5;
@@ -152,6 +152,10 @@ interface MutationRule {
   targetApproach: TestingApproach;
   /** Human-readable reason */
   reason: string;
+  /** Priority: higher = wins when two mutations conflict (1-10) */
+  priority: number;
+  /** Concerns that conflict with this mutation (can't be active simultaneously) */
+  conflictsWith: ConcernArea[];
   /** The prompt patch to apply */
   patch: StrategyPromptPatch;
 }
@@ -169,6 +173,8 @@ const MUTATION_RULES: MutationRule[] = [
     concern: 'element-interaction',
     currentApproach: 'dom-selector',
     targetApproach: 'api-first',
+    priority: 8,
+    conflictsWith: ['cross-layer-consistency'],
     reason: 'DOM selectors are unreliable for this feature. Switch to API-first: trigger actions via UI, validate results via API response.',
     patch: {
       heading: '## STRATEGY MUTATION: API-First Validation (auto-evolved)',
@@ -227,6 +233,8 @@ const MUTATION_RULES: MutationRule[] = [
     concern: 'async-timing',
     currentApproach: 'dom-selector',
     targetApproach: 'state-driven',
+    priority: 9,
+    conflictsWith: [],
     reason: 'Async timing issues indicate DOM is checked before state settles. Switch to state-driven: wait for state store to update, then optionally verify UI.',
     patch: {
       heading: '## STRATEGY MUTATION: State-Driven Assertions (auto-evolved)',
@@ -271,6 +279,8 @@ const MUTATION_RULES: MutationRule[] = [
     concern: 'auth-session',
     currentApproach: 'dom-selector',
     targetApproach: 'network-interception',
+    priority: 10,
+    conflictsWith: [],
     reason: 'Auth tokens expire during test runs. Switch to network interception: inject tokens at network level, validate auth state before each test.',
     patch: {
       heading: '## STRATEGY MUTATION: Token-Aware Testing (auto-evolved)',
@@ -318,6 +328,8 @@ const MUTATION_RULES: MutationRule[] = [
     concern: 'data-validation',
     currentApproach: 'dom-selector',
     targetApproach: 'contract-testing',
+    priority: 6,
+    conflictsWith: ['cross-layer-consistency'],
     reason: 'Network unreliability makes full E2E fragile. Add contract tests: validate API schemas independently, use mocked responses for UI tests.',
     patch: {
       heading: '## STRATEGY MUTATION: Contract Testing Layer (auto-evolved)',
@@ -359,6 +371,8 @@ const MUTATION_RULES: MutationRule[] = [
     concern: 'cross-layer-consistency',
     currentApproach: 'dom-selector',
     targetApproach: 'hybrid-ui-api',
+    priority: 7,
+    conflictsWith: ['element-interaction', 'data-validation'],
     reason: 'UI shows stale or mismatched data. Switch to hybrid: fetch from API AND read from UI, compare the two for consistency.',
     patch: {
       heading: '## STRATEGY MUTATION: Hybrid UI-API Consistency (auto-evolved)',
@@ -452,7 +466,8 @@ function aggregatePatterns(library: ExperienceLibrary, projectName: string): Agg
 
 /**
  * Given aggregated patterns, detect which ones cross the mutation threshold.
- * Returns mutation rules that should fire, filtered against already-active mutations.
+ * Returns mutation rules that should fire, sorted by priority.
+ * Resolves conflicts: if two mutations conflict, higher priority wins.
  */
 function detectMutations(
   aggregated: AggregatedPattern[],
@@ -475,10 +490,32 @@ function detectMutations(
     );
     if (alreadyActive) continue;
 
+    // Skip if a conflicting mutation is already active
+    const conflictsWithActive = activeMutations.some(
+      m => m.status === 'active' && rule.conflictsWith.includes(m.concern as ConcernArea)
+    );
+    if (conflictsWithActive) continue;
+
     candidates.push({ pattern, rule });
   }
 
-  return candidates;
+  // Sort by priority (highest first) — when budget is limited, highest priority wins
+  candidates.sort((a, b) => b.rule.priority - a.rule.priority);
+
+  // Resolve conflicts between candidates: if A conflicts with B, drop B (lower priority)
+  const accepted: Array<{ pattern: AggregatedPattern; rule: MutationRule }> = [];
+  const blockedConcerns = new Set<ConcernArea>();
+
+  for (const candidate of candidates) {
+    if (blockedConcerns.has(candidate.rule.concern)) continue;
+    accepted.push(candidate);
+    // Block all concerns this mutation conflicts with
+    for (const conflict of candidate.rule.conflictsWith) {
+      blockedConcerns.add(conflict);
+    }
+  }
+
+  return accepted;
 }
 
 // ============================================================================

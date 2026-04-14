@@ -110,8 +110,8 @@ interface ExperienceDB {
 // ============================================================================
 
 const MAX_EXPERIENCES = 500;
-const CONFIDENCE_DECAY_PER_DAY = 0.002;   // Lose 0.2% per day unused
-const MIN_CONFIDENCE_TO_KEEP = 0.1;        // Below this → evict
+const CONFIDENCE_DECAY_PER_DAY = 0.005;   // Lose 0.5% per day unused (FE tests are noisy)
+const MIN_CONFIDENCE_TO_KEEP = 0.15;       // Below this → evict (raised from 0.1)
 const SIMILARITY_THRESHOLD = 0.7;          // Above this → deduplicate
 
 // ============================================================================
@@ -407,7 +407,10 @@ export class ExperienceLibrary {
     for (const exp of this.db.experiences) {
       const lastUsed = new Date(exp.lastUsedAt).getTime();
       const daysSinceUse = (now - lastUsed) / (1000 * 60 * 60 * 24);
-      const decay = daysSinceUse * CONFIDENCE_DECAY_PER_DAY;
+
+      // Low-use experiences decay 2x faster (single-occurrence flukes fade quickly)
+      const useMultiplier = exp.useCount <= 1 ? 2.0 : 1.0;
+      const decay = daysSinceUse * CONFIDENCE_DECAY_PER_DAY * useMultiplier;
 
       if (decay > 0.01) {
         exp.confidence = Math.max(0, exp.confidence - decay);
