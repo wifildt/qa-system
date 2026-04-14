@@ -6,6 +6,7 @@ dist/
 experience-db.json
 learning-db.json
 rule-scores.json
+strategy-evolution-db.json
 
 # Test artifacts
 reports/

@@ -10,6 +10,7 @@
  *   qa run [--config <path>]          Full pipeline: validate → execute → heal
  *   qa heal <results-path>            Self-heal from execution results
  *   qa experience [--stats|--query]   Manage experience library
+ *   qa evolve [--report]               Run strategy evolution engine
  *   qa init                           Initialize qa-system in current project
  *
  * ============================================================================
@@ -206,6 +207,29 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
     console.log(`${GREEN}Extracted ${extraction.extracted} new experiences${RESET}`);
   }
 
+  // Phase 5: Strategy Evolution
+  console.log(`\n${YELLOW}[Phase 5] Strategy evolution...${RESET}`);
+  const { StrategyEvolutionEngine } = await import('../src/engine/strategy-evolution.js');
+  const stratPath = path.resolve('qa-system', 'strategy-evolution-db.json');
+  const stratEngine = StrategyEvolutionEngine.load(stratPath);
+  const evolution = stratEngine.evolve(lib);
+
+  if (evolution.newMutations.length > 0) {
+    for (const m of evolution.newMutations) {
+      console.log(`${GREEN}MUTATION: ${m.concern}: ${m.from} → ${m.to}${RESET}`);
+    }
+  }
+  if (evolution.revertedMutations.length > 0) {
+    for (const m of evolution.revertedMutations) {
+      console.log(`${RED}REVERTED: ${m.concern}: ${m.from} → ${m.to}${RESET}`);
+    }
+  }
+  if (evolution.confirmedMutations.length > 0) {
+    for (const m of evolution.confirmedMutations) {
+      console.log(`${GREEN}CONFIRMED: ${m.concern}: ${m.from} → ${m.to}${RESET}`);
+    }
+  }
+
   console.log(`\n${GREEN}${BOLD}Pipeline complete.${RESET}`);
 }
 
@@ -263,6 +287,68 @@ async function cmdExperience(flags: Record<string, boolean | string>): Promise<v
   }
 }
 
+async function cmdEvolve(flags: Record<string, boolean | string>): Promise<void> {
+  const { ExperienceLibrary } = await import('../src/engine/experience-library.js');
+  const { StrategyEvolutionEngine } = await import('../src/engine/strategy-evolution.js');
+
+  const dbPath = path.resolve('qa-system', 'experience-db.json');
+  const stratPath = path.resolve('qa-system', 'strategy-evolution-db.json');
+
+  const lib = ExperienceLibrary.load(dbPath);
+  const engine = StrategyEvolutionEngine.load(stratPath);
+
+  if (flags['report']) {
+    console.log(`\n${engine.generateReport()}`);
+    return;
+  }
+
+  console.log(`\n${BOLD}QA Framework — Strategy Evolution${RESET}`);
+  console.log(`${DIM}Analyzing experience library for strategy mutations...${RESET}\n`);
+
+  const result = engine.evolve(lib);
+
+  if (result.newMutations.length > 0) {
+    console.log(`${GREEN}${BOLD}New mutations:${RESET}`);
+    for (const m of result.newMutations) {
+      console.log(`  ${GREEN}+${RESET} ${m.concern}: ${DIM}${m.from}${RESET} → ${CYAN}${m.to}${RESET}`);
+      console.log(`    ${DIM}${m.reason}${RESET}`);
+      console.log(`    Trigger: "${m.triggerPattern}" x${m.triggerFrequency} (confidence: ${(m.triggerConfidence * 100).toFixed(0)}%)`);
+    }
+  }
+
+  if (result.revertedMutations.length > 0) {
+    console.log(`\n${RED}${BOLD}Reverted mutations:${RESET}`);
+    for (const m of result.revertedMutations) {
+      console.log(`  ${RED}✗${RESET} ${m.concern}: ${m.from} → ${m.to} — failure rate increased`);
+    }
+  }
+
+  if (result.confirmedMutations.length > 0) {
+    console.log(`\n${GREEN}${BOLD}Confirmed mutations:${RESET}`);
+    for (const m of result.confirmedMutations) {
+      console.log(`  ${GREEN}✓${RESET} ${m.concern}: ${m.from} → ${m.to} — proven effective`);
+    }
+  }
+
+  if (result.activeMutations.length > 0) {
+    console.log(`\n${YELLOW}Active mutations (evaluating):${RESET}`);
+    for (const m of result.activeMutations) {
+      console.log(`  ~ ${m.concern}: ${m.from} → ${m.to} (${m.runsAfterMutation}/3 runs)`);
+    }
+  }
+
+  if (result.newMutations.length === 0 && result.revertedMutations.length === 0 && result.confirmedMutations.length === 0) {
+    console.log(`${DIM}No mutations triggered. Thresholds: frequency ≥ ${5}, confidence ≥ ${60}%${RESET}`);
+  }
+
+  // Show prompt section preview
+  const promptSection = engine.generateStrategyPromptSection();
+  if (promptSection) {
+    console.log(`\n${BOLD}Strategy prompt section (will be injected into Test Strategy Agent):${RESET}`);
+    console.log(`${DIM}${promptSection.slice(0, 500)}...${RESET}`);
+  }
+}
+
 async function cmdInit(): Promise<void> {
   console.log(`\n${BOLD}QA Framework — Initialize${RESET}\n`);
 
@@ -300,6 +386,7 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}qa run${RESET} [--config <path>]          Full pipeline: validate → execute → heal → learn
   ${CYAN}qa heal${RESET} <results.json>            Self-heal failed tests from execution results
   ${CYAN}qa experience${RESET} [--stats|--query]   View experience library
+  ${CYAN}qa evolve${RESET} [--report]              Run strategy evolution (detect + apply mutations)
 
 ${BOLD}WORKFLOW${RESET}
 
@@ -326,6 +413,7 @@ ${BOLD}ARCHITECTURE${RESET}
   11 agents: 6 AI + 3 Non-AI + 2 Hybrid
   3 feedback loops: enforcement, self-healing, learning
   Experience library with confidence decay + prompt evolution
+  Strategy evolution: auto-mutates test approach based on failure patterns
   Multi-repo via project.config.json + Convention Detector
 `);
 }
@@ -383,6 +471,9 @@ async function main(): Promise<void> {
       break;
     case 'experience':
       await cmdExperience(args.flags);
+      break;
+    case 'evolve':
+      await cmdEvolve(args.flags);
       break;
     case 'init':
       await cmdInit();

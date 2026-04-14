@@ -13,6 +13,7 @@ export { detectConventions } from './engine/convention-detector.js';
 export { ProjectAdapter } from './engine/project-adapter.js';
 export { evolvePrompt, evolveAllPrompts } from './engine/prompt-evolution.js';
 export { RuleScoringSystem } from './engine/rule-scoring.js';
+export { StrategyEvolutionEngine } from './engine/strategy-evolution.js';
 
 // Types
 export type { EngineReport, ValidationResult, Violation } from './engine/validation-engine.js';
@@ -24,3 +25,7 @@ export type {
   AntiPattern,
   FeatureKnowledge,
 } from './engine/experience-library.js';
+export type {
+  StrategyMutation,
+  StrategyPromptPatch,
+} from './engine/strategy-evolution.js';

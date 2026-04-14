@@ -23,6 +23,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { ExperienceLibrary } from './experience-library.js';
+import { StrategyEvolutionEngine } from './strategy-evolution.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +37,7 @@ interface EvolutionConfig {
   agentType: string;            // 'ui-test' | 'api-test' | 'state-test' | etc.
   projectName?: string;         // For project-specific experience
   maxExperienceLines: number;   // Cap injected experience (default: 15)
+  strategyEvolutionDbPath?: string; // Path to strategy-evolution-db.json
 }
 
 interface EvolvedPrompt {
@@ -134,7 +136,22 @@ export function evolvePrompt(
     log.push(`Injected ${selectorFixes.length} selector strategy learnings`);
   }
 
-  // 7. Assemble evolved prompt
+  // 7. Inject strategy mutations (for test-strategy and test generators)
+  if (['test-strategy', 'ui-test', 'api-test', 'state-test'].includes(config.agentType) && config.strategyEvolutionDbPath) {
+    try {
+      const stratEngine = StrategyEvolutionEngine.load(config.strategyEvolutionDbPath);
+      const strategySection = stratEngine.generateStrategyPromptSection();
+      if (strategySection) {
+        sections.push(strategySection);
+        const mutationCount = stratEngine.getActiveMutations().length + stratEngine.getConfirmedMutations().length;
+        log.push(`Injected ${mutationCount} strategy mutation(s)`);
+      }
+    } catch {
+      log.push('Strategy evolution DB not found or invalid — skipping');
+    }
+  }
+
+  // 8. Assemble evolved prompt
   let evolvedContent = basePrompt;
 
   if (sections.length > 0) {
@@ -186,7 +203,8 @@ export function evolveAllPrompts(
   promptsDir: string,
   library: ExperienceLibrary,
   projectName?: string,
-  outputDir?: string
+  outputDir?: string,
+  strategyEvolutionDbPath?: string,
 ): Map<string, EvolvedPrompt> {
   const results = new Map<string, EvolvedPrompt>();
   const outDir = outputDir || path.join(promptsDir, '.evolved');
@@ -213,6 +231,7 @@ export function evolveAllPrompts(
         agentType,
         projectName,
         maxExperienceLines: 15,
+        strategyEvolutionDbPath,
       },
       library
     );
