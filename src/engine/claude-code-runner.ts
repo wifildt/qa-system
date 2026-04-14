@@ -40,26 +40,14 @@ import { StrategyEvolutionEngine } from './strategy-evolution.js';
 const DEFAULT_MODEL = 'sonnet';
 const DEFAULT_EFFORT = 'high';
 
-/** Timeouts per agent type — needed for subprocess management */
-const AGENT_TIMEOUTS: Record<string, number> = {
-  'auth-fixture':         120_000,
-  'file-reader':           60_000,
-  'ui-test-generator':    600_000,
-  'api-test-generator':   600_000,
-  'state-test-generator': 600_000,
-  'feature-understanding':300_000,
-  'test-strategy':        300_000,
-  'consistency-analysis': 180_000,
-  'default':              180_000,
-};
+// No timeouts — stdout streams to terminal, user sees progress realtime.
+// User can Ctrl+C if stuck. No silent timeout kills.
 
 export interface RunnerConfig {
   /** Root directory of the target project */
   projectRoot: string;
   /** Model override: 'sonnet' (default) or 'opus' (best quality) */
   model?: string;
-  /** Override timeout for all tasks (ms) */
-  timeout?: number;
   /** Additional directories to give claude access to */
   additionalDirs?: string[];
   /** Path to the qa-agent-framework root (for prompts/rules) */
@@ -107,9 +95,6 @@ export class ClaudeCodeRunner {
 
   private getModel(): string { return this.config.model || DEFAULT_MODEL; }
   private getEffort(): string { return this.getModel() === 'opus' ? 'max' : DEFAULT_EFFORT; }
-  private getTimeout(agentType: string): number {
-    return this.config.timeout ?? AGENT_TIMEOUTS[agentType] ?? AGENT_TIMEOUTS['default'];
-  }
 
   /**
    * Run a single agent task via claude CLI.
@@ -118,7 +103,6 @@ export class ClaudeCodeRunner {
     const start = Date.now();
     const model = this.getModel();
     const effort = this.getEffort();
-    const timeout = this.getTimeout(task.agentType);
 
     // Inject experience from previous runs (if available)
     const experienceCtx = this.loadExperienceContext(task.agentType);
@@ -133,10 +117,12 @@ export class ClaudeCodeRunner {
     // Build CLI args
     const args = this.buildArgs(task, model, effort);
 
+    console.log(`\n${'─'.repeat(60)}`);
     console.log(`[${task.agentType}] model=${model} effort=${effort}`);
+    console.log(`${'─'.repeat(60)}`);
 
     try {
-      const output = await this.execute(fullPrompt, args, timeout);
+      await this.execute(fullPrompt, args);
       const durationMs = Date.now() - start;
 
       // Check if output file was created
@@ -145,9 +131,11 @@ export class ClaudeCodeRunner {
         : undefined;
       const fileCreated = outputFile ? fs.existsSync(outputFile) : false;
 
+      console.log(`\n[${task.agentType}] Done in ${(durationMs / 1000).toFixed(1)}s${fileCreated ? ` → ${task.outputFile}` : ''}`);
+
       return {
-        success: true,
-        output,
+        success: fileCreated || !task.outputFile,
+        output: '',
         outputFile: fileCreated ? outputFile : undefined,
         durationMs,
       };
@@ -301,74 +289,40 @@ export class ClaudeCodeRunner {
   // EXECUTE
   // --------------------------------------------------------------------------
 
-  private execute(prompt: string, args: string[], timeout: number): Promise<string> {
+  private execute(prompt: string, args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
+      // Stream stdout+stderr to terminal so user sees progress realtime.
+      // No timeout — user can Ctrl+C if stuck.
       const proc = spawn('claude', args, {
         cwd: this.config.projectRoot,
-        stdio: ['pipe', 'pipe', 'pipe'],
+        stdio: ['pipe', 'inherit', 'inherit'],
         env: { ...process.env },
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      proc.stderr.on('data', (data) => {
-        stderr += data.toString();
       });
 
       // Send prompt via stdin
       proc.stdin.write(prompt);
       proc.stdin.end();
 
-      // Timeout
-      const timer = setTimeout(() => {
-        proc.kill('SIGTERM');
-        reject(new Error(`Claude CLI timed out after ${timeout}ms`));
-      }, timeout);
-
       proc.on('close', (code) => {
-        clearTimeout(timer);
         if (code === 0) {
-          resolve(stdout);
+          resolve('');
         } else {
-          reject(new Error(`Claude CLI exited with code ${code}: ${stderr || stdout}`));
+          reject(new Error(`Claude CLI exited with code ${code}`));
         }
       });
 
       proc.on('error', (err) => {
-        clearTimeout(timer);
         reject(new Error(`Failed to spawn claude CLI: ${err.message}`));
       });
     });
   }
 
-  // --------------------------------------------------------------------------
-  // PARALLEL EXECUTION
-  // --------------------------------------------------------------------------
-
   /**
-   * Run multiple tasks concurrently with limited concurrency.
+   * Alias for runPipeline — sequential with streaming output.
+   * (Parallel would interleave 3 claude outputs — unreadable.)
    */
-  async runParallel(tasks: AgentTask[], concurrency: number = 3): Promise<RunResult[]> {
-    const results: RunResult[] = new Array(tasks.length);
-    const queue = tasks.map((t, i) => ({ task: t, index: i }));
-
-    const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
-      while (queue.length > 0) {
-        const item = queue.shift()!;
-        results[item.index] = await this.run(item.task);
-        if (!results[item.index].success) {
-          console.error(`[PARALLEL] Task "${item.task.agentType}" failed: ${results[item.index].error}`);
-        }
-      }
-    });
-
-    await Promise.all(workers);
-    return results;
+  async runParallel(tasks: AgentTask[]): Promise<RunResult[]> {
+    return this.runPipeline(tasks);
   }
 }
 

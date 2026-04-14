@@ -213,7 +213,7 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
           if (fileCount > 0) {
             console.log(`${YELLOW}[Phase 1c/7] Generating ${fileCount} test file(s) (parallel)...${RESET}`);
             const testTasks = buildTestsFromPlan(planPath, projectRoot, gen.context, gen.rulesContext);
-            const testResults = await runner.runParallel(testTasks, 3);
+            const testResults = await runner.runParallel(testTasks);
             const passed = testResults.filter(r => r.success).length;
             const failed = testResults.filter(r => !r.success).length;
             console.log(`${GREEN}Generated: ${passed}${RESET}${failed > 0 ? `  ${RED}Failed: ${failed}${RESET}` : ''}`);
@@ -522,7 +522,7 @@ async function cmdGenerate(configPath?: string, flags: Record<string, boolean | 
   if (fileCount > 0) {
     console.log(`\n${YELLOW}[3/3] Generating ${fileCount} test file(s)...${RESET}`);
     const testTasks = buildTestsFromPlan(planPath, projectRoot, gen.context, gen.rulesContext);
-    const testResults = await runner.runParallel(testTasks, 3);
+    const testResults = await runner.runParallel(testTasks);
 
     for (let i = 0; i < testResults.length; i++) {
       const r = testResults[i];
