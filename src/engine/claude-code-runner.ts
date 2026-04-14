@@ -25,55 +25,40 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { FRAMEWORK_ROOT, frameworkAsset } from './paths.js';
+import { ExperienceLibrary } from './experience-library.js';
+import { StrategyEvolutionEngine } from './strategy-evolution.js';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-/** Model + effort strategy per agent type to optimize cost */
-type ModelTier = 'sonnet' | 'opus';
-type EffortLevel = 'low' | 'medium' | 'high' | 'max';
-
-interface AgentCostProfile {
-  model: ModelTier;
-  effort: EffortLevel;
-  maxBudget: number;
-  timeout: number;
-}
-
 /**
- * Cost profiles per agent type.
- * - haiku/low: quick deterministic tasks (auth fixture, file reading)
- * - sonnet/medium: standard generation (UI tests, API tests)
- * - opus/high: complex reasoning (test strategy, feature understanding)
+ * Model selection: subscription-based, no per-token cost.
+ *   Default: sonnet / high  (fast + good quality)
+ *   Best:    opus / max     (user passes --model opus)
  */
-const AGENT_COST_PROFILES: Record<string, AgentCostProfile> = {
-  // Quick tasks — sonnet low effort
-  'auth-fixture':        { model: 'sonnet', effort: 'low',    maxBudget: 0.30, timeout: 120_000 },
-  'file-reader':         { model: 'sonnet', effort: 'low',    maxBudget: 0.15, timeout: 60_000 },
+const DEFAULT_MODEL = 'sonnet';
+const DEFAULT_EFFORT = 'high';
 
-  // Standard generation — sonnet medium effort, generous timeout
-  'ui-test-generator':   { model: 'sonnet', effort: 'medium', maxBudget: 0.80, timeout: 300_000 },
-  'api-test-generator':  { model: 'sonnet', effort: 'medium', maxBudget: 0.80, timeout: 300_000 },
-  'state-test-generator':{ model: 'sonnet', effort: 'medium', maxBudget: 0.80, timeout: 300_000 },
-
-  // Complex reasoning — opus for quality
-  'feature-understanding':{ model: 'opus',  effort: 'high',   maxBudget: 1.50, timeout: 300_000 },
-  'test-strategy':        { model: 'opus',  effort: 'high',   maxBudget: 1.00, timeout: 300_000 },
-  'consistency-analysis': { model: 'sonnet', effort: 'high',  maxBudget: 0.50, timeout: 180_000 },
-
-  // Default
-  'default':             { model: 'sonnet', effort: 'medium', maxBudget: 0.50, timeout: 180_000 },
+/** Timeouts per agent type — needed for subprocess management */
+const AGENT_TIMEOUTS: Record<string, number> = {
+  'auth-fixture':         120_000,
+  'file-reader':           60_000,
+  'ui-test-generator':    300_000,
+  'api-test-generator':   300_000,
+  'state-test-generator': 300_000,
+  'feature-understanding':300_000,
+  'test-strategy':        300_000,
+  'consistency-analysis': 180_000,
+  'default':              180_000,
 };
 
 export interface RunnerConfig {
   /** Root directory of the target project */
   projectRoot: string;
-  /** Override model for all tasks (ignores cost profiles) */
+  /** Model override: 'sonnet' (default) or 'opus' (best quality) */
   model?: string;
-  /** Override max budget for all tasks */
-  maxBudget?: number;
-  /** Override timeout for all tasks */
+  /** Override timeout for all tasks (ms) */
   timeout?: number;
   /** Additional directories to give claude access to */
   additionalDirs?: string[];
@@ -120,15 +105,10 @@ export class ClaudeCodeRunner {
     };
   }
 
-  /** Get cost profile for an agent type (with config overrides) */
-  private getProfile(agentType: string): AgentCostProfile {
-    const base = AGENT_COST_PROFILES[agentType] || AGENT_COST_PROFILES['default'];
-    return {
-      model: (this.config.model as ModelTier) || base.model,
-      effort: base.effort,
-      maxBudget: this.config.maxBudget ?? base.maxBudget,
-      timeout: this.config.timeout ?? base.timeout,
-    };
+  private getModel(): string { return this.config.model || DEFAULT_MODEL; }
+  private getEffort(): string { return this.getModel() === 'opus' ? 'max' : DEFAULT_EFFORT; }
+  private getTimeout(agentType: string): number {
+    return this.config.timeout ?? AGENT_TIMEOUTS[agentType] ?? AGENT_TIMEOUTS['default'];
   }
 
   /**
@@ -136,18 +116,27 @@ export class ClaudeCodeRunner {
    */
   async run(task: AgentTask): Promise<RunResult> {
     const start = Date.now();
-    const profile = this.getProfile(task.agentType);
+    const model = this.getModel();
+    const effort = this.getEffort();
+    const timeout = this.getTimeout(task.agentType);
+
+    // Inject experience from previous runs (if available)
+    const experienceCtx = this.loadExperienceContext(task.agentType);
+    if (experienceCtx) {
+      task = { ...task, context: (task.context || '') + experienceCtx };
+      console.log(`[${task.agentType}] Injected experience from previous runs`);
+    }
 
     // Build the full prompt
     const fullPrompt = this.buildPrompt(task);
 
     // Build CLI args
-    const args = this.buildArgs(task, profile);
+    const args = this.buildArgs(task, model, effort);
 
-    console.log(`[${task.agentType}] model=${profile.model} effort=${profile.effort} budget=$${profile.maxBudget}`);
+    console.log(`[${task.agentType}] model=${model} effort=${effort}`);
 
     try {
-      const output = await this.execute(fullPrompt, args, profile.timeout);
+      const output = await this.execute(fullPrompt, args, timeout);
       const durationMs = Date.now() - start;
 
       // Check if output file was created
@@ -224,15 +213,66 @@ export class ClaudeCodeRunner {
   }
 
   // --------------------------------------------------------------------------
+  // EXPERIENCE INJECTION — feeds previous run learnings into prompts
+  // --------------------------------------------------------------------------
+
+  /**
+   * Load experience from project's qa-system/ and generate additional context.
+   * Returns empty string if no experience DB exists (first run = base prompt only).
+   */
+  private loadExperienceContext(agentType: string): string {
+    const qaDir = path.join(this.config.projectRoot, 'qa-system');
+    const dbPath = path.join(qaDir, 'experience-db.json');
+
+    if (!fs.existsSync(dbPath)) return '';
+
+    const library = ExperienceLibrary.load(dbPath);
+    if (library.stats.totalExperiences === 0) return '';
+
+    const sections: string[] = [];
+
+    // Failure patterns — what went wrong before
+    const failureCtx = library.generatePromptContext('failure_pattern', 5);
+    if (failureCtx) sections.push(failureCtx);
+
+    // Fix strategies — what worked to fix it
+    const fixCtx = library.generatePromptContext('fix_strategy', 5);
+    if (fixCtx) sections.push(fixCtx);
+
+    // Anti-patterns — what to avoid
+    const antiCtx = library.generatePromptContext('anti_pattern', 3);
+    if (antiCtx) sections.push(antiCtx);
+
+    // Strategy mutations — approach changes from evolution engine
+    const stratPath = path.join(qaDir, 'strategy-evolution-db.json');
+    if (fs.existsSync(stratPath)) {
+      try {
+        const stratEngine = StrategyEvolutionEngine.load(stratPath);
+        const stratSection = stratEngine.generateStrategyPromptSection();
+        if (stratSection) sections.push(stratSection);
+      } catch { /* no strategy data yet */ }
+    }
+
+    if (sections.length === 0) return '';
+
+    return [
+      '',
+      '--- EXPERIENCE FROM PREVIOUS RUNS (apply these lessons) ---',
+      ...sections,
+      '> These are real lessons from past executions. Apply them proactively.',
+      '--- END EXPERIENCE ---',
+    ].join('\n');
+  }
+
+  // --------------------------------------------------------------------------
   // CLI ARGS
   // --------------------------------------------------------------------------
 
-  private buildArgs(task: AgentTask, profile: AgentCostProfile): string[] {
+  private buildArgs(task: AgentTask, model: string, effort: string): string[] {
     const args: string[] = [
       '--print',
-      '--model', profile.model,
-      '--effort', profile.effort,
-      '--max-budget-usd', String(profile.maxBudget),
+      '--model', model,
+      '--effort', effort,
       '--output-format', 'text',
       '--no-session-persistence',
     ];

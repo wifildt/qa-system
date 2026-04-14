@@ -502,8 +502,13 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}qa run${RESET} [--config <path>]          Full pipeline: generate → validate → execute → heal → learn → evolve
   ${CYAN}qa heal${RESET} <results.json>            Self-heal failed tests from execution results
   ${CYAN}qa experience${RESET} [--stats|--query]   View experience library
-  ${CYAN}qa generate${RESET} [--config <path>]       Generate tests via Claude Code CLI (AI)
+  ${CYAN}qa generate${RESET} [--config <path>]       Generate tests via Claude Code CLI
   ${CYAN}qa evolve${RESET} [--report]              Run strategy evolution (detect + apply mutations)
+
+${BOLD}MODEL OPTIONS${RESET}
+
+  Default: sonnet / high (fast + good quality)
+  Best:    --model opus  (opus / max — highest quality)
 
 ${BOLD}WORKFLOW${RESET}
 
@@ -514,24 +519,23 @@ ${BOLD}WORKFLOW${RESET}
 
   ${DIM}# 2. Edit the generated config${RESET}
   vim qa-system/project.config.json
-  ${DIM}# → add auth accounts, feature entry URLs, sections${RESET}
+  ${DIM}# add auth accounts, feature entry URLs, sections${RESET}
 
-  ${DIM}# 3. Generate & validate tests (AI agents)${RESET}
-  qa validate
+  ${DIM}# 3. Full pipeline (generate + validate + execute + heal + learn + evolve)${RESET}
+  qa run --config qa-system/project.config.json
 
-  ${DIM}# 4. Run tests + self-heal${RESET}
-  qa run
+  ${DIM}# 4. Or step by step${RESET}
+  qa generate --config qa-system/project.config.json
+  qa validate --config qa-system/project.config.json
+  qa run --skip-generate    ${DIM}# validate + execute + heal + learn + evolve${RESET}
 
-  ${DIM}# 5. After multiple runs — system learns${RESET}
+  ${DIM}# 5. After multiple runs — system learns and evolves${RESET}
   qa experience --stats
+  qa evolve --report
 
-${BOLD}ARCHITECTURE${RESET}
+${BOLD}PREREQUISITES${RESET}
 
-  11 agents: 6 AI + 3 Non-AI + 2 Hybrid
-  3 feedback loops: enforcement, self-healing, learning
-  Experience library with confidence decay + prompt evolution
-  Strategy evolution: auto-mutates test approach based on failure patterns
-  Multi-repo via project.config.json + Convention Detector
+  Node.js >= 20, Playwright, Claude Code CLI (for qa generate/run)
 `);
 }
 
