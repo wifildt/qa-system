@@ -11,6 +11,7 @@
  *   qa heal <results-path>            Self-heal from execution results
  *   qa experience [--stats|--query]   Manage experience library
  *   qa evolve [--report]               Run strategy evolution engine
+ *   qa generate [--config <path>]     Generate tests via Claude Code CLI
  *   qa init                           Initialize qa-system in current project
  *
  * ============================================================================
@@ -288,6 +289,71 @@ async function cmdExperience(flags: Record<string, boolean | string>): Promise<v
   }
 }
 
+async function cmdGenerate(configPath?: string, flags: Record<string, boolean | string> = {}): Promise<void> {
+  const { ClaudeCodeRunner, buildTestGenerationTasks } = await import('../src/engine/claude-code-runner.js');
+
+  const cfgPath = configPath || path.resolve('qa-system', 'project.config.json');
+  if (!fs.existsSync(cfgPath)) {
+    console.error(`${RED}Config not found: ${cfgPath}${RESET}`);
+    console.log(`Run: ${CYAN}qa detect <repo-path>${RESET} first.`);
+    process.exit(1);
+  }
+
+  const config = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+  const projectRoot = config.project?.root || path.dirname(cfgPath);
+  const featureIndex = flags['feature'] ? parseInt(flags['feature'] as string, 10) : 0;
+  const modelOverride = flags['model'] as string | undefined;
+
+  console.log(`\n${BOLD}QA Framework — Test Generation (via Claude Code CLI)${RESET}`);
+  console.log(`Project: ${CYAN}${config.project?.name}${RESET}`);
+  console.log(`Feature: ${CYAN}${config.features?.[featureIndex]?.name || 'default'}${RESET}`);
+  if (modelOverride) console.log(`Model override: ${CYAN}${modelOverride}${RESET}`);
+  console.log();
+
+  // Build tasks
+  const tasks = buildTestGenerationTasks(cfgPath, SRC_DIR.replace('/src', ''), featureIndex);
+  if (tasks.length === 0) {
+    console.log(`${YELLOW}No features found in config. Add features to project.config.json.${RESET}`);
+    return;
+  }
+
+  console.log(`${DIM}Tasks: ${tasks.length}${RESET}`);
+  for (const t of tasks) {
+    console.log(`  ${DIM}[${t.agentType}] → ${t.outputFile || '(stdout)'}${RESET}`);
+  }
+  console.log();
+
+  // Run
+  const runner = new ClaudeCodeRunner({
+    projectRoot,
+    model: modelOverride,
+    frameworkRoot: SRC_DIR.replace('/src', ''),
+  });
+
+  const results = await runner.runPipeline(tasks);
+
+  // Report
+  let passed = 0;
+  let failed = 0;
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const t = tasks[i];
+    if (r.success) {
+      passed++;
+      console.log(`${GREEN}DONE${RESET} [${t.agentType}] ${(r.durationMs / 1000).toFixed(1)}s${r.outputFile ? ` → ${path.basename(r.outputFile)}` : ''}`);
+    } else {
+      failed++;
+      console.log(`${RED}FAIL${RESET} [${t.agentType}] ${r.error?.slice(0, 200)}`);
+    }
+  }
+
+  console.log(`\n${passed > 0 ? GREEN : ''}Generated: ${passed}${RESET}  ${failed > 0 ? RED : ''}Failed: ${failed}${RESET}`);
+
+  if (passed > 0) {
+    console.log(`\nNext: ${CYAN}qa validate --config ${cfgPath}${RESET}`);
+  }
+}
+
 async function cmdEvolve(flags: Record<string, boolean | string>, target?: string): Promise<void> {
   const { ExperienceLibrary } = await import('../src/engine/experience-library.js');
   const { StrategyEvolutionEngine } = await import('../src/engine/strategy-evolution.js');
@@ -389,6 +455,7 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}qa run${RESET} [--config <path>]          Full pipeline: validate → execute → heal → learn
   ${CYAN}qa heal${RESET} <results.json>            Self-heal failed tests from execution results
   ${CYAN}qa experience${RESET} [--stats|--query]   View experience library
+  ${CYAN}qa generate${RESET} [--config <path>]       Generate tests via Claude Code CLI (AI)
   ${CYAN}qa evolve${RESET} [--report]              Run strategy evolution (detect + apply mutations)
 
 ${BOLD}WORKFLOW${RESET}
@@ -477,6 +544,9 @@ async function main(): Promise<void> {
       break;
     case 'evolve':
       await cmdEvolve(args.flags, args.target);
+      break;
+    case 'generate':
+      await cmdGenerate(args.config, args.flags);
       break;
     case 'init':
       await cmdInit();
