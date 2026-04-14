@@ -1,6 +1,6 @@
 {
   "name": "@ldtdev/qa-system",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Self-learning QA framework for frontend apps. Detect conventions, generate tests (via Claude Code CLI), validate, execute, self-heal, learn, evolve strategy.",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -59,6 +59,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/wifildt/qa-system"
+  },
+  "homepage": "https://github.com/wifildt/qa-system",
+  "bugs": {
+    "url": "https://github.com/wifildt/qa-system/issues"
   },
   "license": "MIT"
 }
