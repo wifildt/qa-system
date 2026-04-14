@@ -207,12 +207,13 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
     console.log(`${GREEN}Extracted ${extraction.extracted} new experiences${RESET}`);
   }
 
-  // Phase 5: Strategy Evolution
-  console.log(`\n${YELLOW}[Phase 5] Strategy evolution...${RESET}`);
+  // Phase 5: Strategy Evolution (scoped to this project)
+  const projectName = configPath ? path.basename(configPath, '.config.json') : 'default';
+  console.log(`\n${YELLOW}[Phase 5] Strategy evolution (project: ${projectName})...${RESET}`);
   const { StrategyEvolutionEngine } = await import('../src/engine/strategy-evolution.js');
   const stratPath = path.resolve('qa-system', 'strategy-evolution-db.json');
   const stratEngine = StrategyEvolutionEngine.load(stratPath);
-  const evolution = stratEngine.evolve(lib);
+  const evolution = stratEngine.evolve(lib, projectName);
 
   if (evolution.newMutations.length > 0) {
     for (const m of evolution.newMutations) {
@@ -287,10 +288,11 @@ async function cmdExperience(flags: Record<string, boolean | string>): Promise<v
   }
 }
 
-async function cmdEvolve(flags: Record<string, boolean | string>): Promise<void> {
+async function cmdEvolve(flags: Record<string, boolean | string>, target?: string): Promise<void> {
   const { ExperienceLibrary } = await import('../src/engine/experience-library.js');
   const { StrategyEvolutionEngine } = await import('../src/engine/strategy-evolution.js');
 
+  const projectName = (flags['project'] as string) || target || 'default';
   const dbPath = path.resolve('qa-system', 'experience-db.json');
   const stratPath = path.resolve('qa-system', 'strategy-evolution-db.json');
 
@@ -303,9 +305,10 @@ async function cmdEvolve(flags: Record<string, boolean | string>): Promise<void>
   }
 
   console.log(`\n${BOLD}QA Framework — Strategy Evolution${RESET}`);
+  console.log(`Project: ${CYAN}${projectName}${RESET}`);
   console.log(`${DIM}Analyzing experience library for strategy mutations...${RESET}\n`);
 
-  const result = engine.evolve(lib);
+  const result = engine.evolve(lib, projectName);
 
   if (result.newMutations.length > 0) {
     console.log(`${GREEN}${BOLD}New mutations:${RESET}`);
@@ -342,7 +345,7 @@ async function cmdEvolve(flags: Record<string, boolean | string>): Promise<void>
   }
 
   // Show prompt section preview
-  const promptSection = engine.generateStrategyPromptSection();
+  const promptSection = engine.generateStrategyPromptSection(projectName);
   if (promptSection) {
     console.log(`\n${BOLD}Strategy prompt section (will be injected into Test Strategy Agent):${RESET}`);
     console.log(`${DIM}${promptSection.slice(0, 500)}...${RESET}`);
@@ -473,7 +476,7 @@ async function main(): Promise<void> {
       await cmdExperience(args.flags);
       break;
     case 'evolve':
-      await cmdEvolve(args.flags);
+      await cmdEvolve(args.flags, args.target);
       break;
     case 'init':
       await cmdInit();

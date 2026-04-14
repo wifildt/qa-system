@@ -136,15 +136,16 @@ export function evolvePrompt(
     log.push(`Injected ${selectorFixes.length} selector strategy learnings`);
   }
 
-  // 7. Inject strategy mutations (for test-strategy and test generators)
+  // 7. Inject strategy mutations (for test-strategy and test generators, scoped to project)
   if (['test-strategy', 'ui-test', 'api-test', 'state-test'].includes(config.agentType) && config.strategyEvolutionDbPath) {
     try {
       const stratEngine = StrategyEvolutionEngine.load(config.strategyEvolutionDbPath);
-      const strategySection = stratEngine.generateStrategyPromptSection();
+      const strategySection = stratEngine.generateStrategyPromptSection(config.projectName);
       if (strategySection) {
         sections.push(strategySection);
-        const mutationCount = stratEngine.getActiveMutations().length + stratEngine.getConfirmedMutations().length;
-        log.push(`Injected ${mutationCount} strategy mutation(s)`);
+        const mutationCount = stratEngine.getActiveMutations(config.projectName).length
+          + stratEngine.getConfirmedMutations(config.projectName).length;
+        log.push(`Injected ${mutationCount} strategy mutation(s) for project "${config.projectName || 'all'}"`);
       }
     } catch {
       log.push('Strategy evolution DB not found or invalid — skipping');

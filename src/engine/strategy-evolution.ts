@@ -61,6 +61,7 @@ type ConcernArea =
 /** A single mutation: change approach for a concern area */
 export interface StrategyMutation {
   id: string;
+  projectName: string;           // Scoped to a specific project
   concern: ConcernArea;
   from: TestingApproach;
   to: TestingApproach;
@@ -134,7 +135,7 @@ const REVERT_FAILURE_INCREASE_RATIO = 1.5;
 const EVALUATION_WINDOW_RUNS = 3;
 
 /** Maximum active mutations at once (prevent chaos) */
-const MAX_ACTIVE_MUTATIONS = 3;
+const MAX_ACTIVE_MUTATIONS = 2;
 
 // ============================================================================
 // MUTATION RULES — Maps failure patterns to strategy changes
@@ -397,9 +398,15 @@ const MUTATION_RULES: MutationRule[] = [
 /**
  * Reads the Experience Library and aggregates failure patterns by concern area.
  * Groups related failures, counts frequency, and computes aggregate confidence.
+ * Filters by project scope: only patterns from this project OR global scope.
  */
-function aggregatePatterns(library: ExperienceLibrary): AggregatedPattern[] {
-  const failures = library.getByCategory<FailurePattern>('failure_pattern');
+function aggregatePatterns(library: ExperienceLibrary, projectName: string): AggregatedPattern[] {
+  const allFailures = library.getByCategory<FailurePattern>('failure_pattern');
+
+  // Scope separation: only this project's patterns + global patterns
+  const failures = allFailures.filter(f =>
+    f.scope === 'global' || f.projectName === projectName
+  );
 
   // Group failures by which mutation rule they'd trigger
   const groups = new Map<number, { patterns: FailurePattern[]; rule: MutationRule }>();
@@ -520,10 +527,11 @@ export class StrategyEvolutionEngine {
   // --------------------------------------------------------------------------
 
   /**
-   * Analyze experience library and produce strategy mutations.
+   * Analyze experience library and produce strategy mutations for a specific project.
+   * Scope separation: only considers patterns from this project + global patterns.
    * Returns new mutations applied this run + any reverted mutations.
    */
-  evolve(library: ExperienceLibrary): {
+  evolve(library: ExperienceLibrary, projectName: string = 'default'): {
     newMutations: StrategyMutation[];
     revertedMutations: StrategyMutation[];
     confirmedMutations: StrategyMutation[];
@@ -535,13 +543,18 @@ export class StrategyEvolutionEngine {
     const revertedMutations: StrategyMutation[] = [];
     const confirmedMutations: StrategyMutation[] = [];
 
-    // Step 1: Evaluate existing active mutations
-    for (const mutation of this.db.activeMutations) {
+    // Scope: only evaluate mutations belonging to this project
+    const projectMutations = this.db.activeMutations.filter(
+      m => m.projectName === projectName
+    );
+
+    // Step 1: Evaluate existing active mutations for THIS project
+    for (const mutation of projectMutations) {
       if (mutation.status !== 'active') continue;
       mutation.runsAfterMutation++;
 
-      // Update failure rate after mutation
-      const currentRate = this.computeFailureRate(mutation.concern, library);
+      // Update failure rate after mutation (scoped to project)
+      const currentRate = this.computeFailureRate(mutation.concern, library, projectName);
       mutation.failureRateAfter = currentRate;
 
       if (mutation.runsAfterMutation >= EVALUATION_WINDOW_RUNS) {
@@ -561,23 +574,25 @@ export class StrategyEvolutionEngine {
     this.db.activeMutations = this.db.activeMutations.filter(m => m.status === 'active');
     this.db.mutationHistory.push(...revertedMutations, ...confirmedMutations);
 
-    // Step 2: Detect new mutations (if under max active limit)
-    if (this.db.activeMutations.length < MAX_ACTIVE_MUTATIONS) {
-      const aggregated = aggregatePatterns(library);
-      const candidates = detectMutations(aggregated, this.db.activeMutations);
+    // Step 2: Detect new mutations (if under max active limit FOR THIS PROJECT)
+    const activeForProject = this.db.activeMutations.filter(m => m.projectName === projectName);
+    if (activeForProject.length < MAX_ACTIVE_MUTATIONS) {
+      const aggregated = aggregatePatterns(library, projectName);
+      const candidates = detectMutations(aggregated, activeForProject);
 
-      // Also exclude concerns that were recently reverted (within 5 runs)
+      // Also exclude concerns that were recently reverted for THIS project (within 5 runs)
       const recentReverts = this.db.mutationHistory
-        .filter(m => m.status === 'reverted')
+        .filter(m => m.status === 'reverted' && m.projectName === projectName)
         .filter(m => this.db.totalPipelineRuns - m.runsAfterMutation < 5);
       const recentRevertConcerns = new Set(recentReverts.map(m => m.concern));
 
       for (const { pattern, rule } of candidates) {
-        if (this.db.activeMutations.length >= MAX_ACTIVE_MUTATIONS) break;
+        if (activeForProject.length + newMutations.length >= MAX_ACTIVE_MUTATIONS) break;
         if (recentRevertConcerns.has(rule.concern)) continue;
 
         const mutation: StrategyMutation = {
           id: `SM-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          projectName,
           concern: rule.concern,
           from: rule.currentApproach,
           to: rule.targetApproach,
@@ -588,7 +603,7 @@ export class StrategyEvolutionEngine {
           appliedAt: new Date().toISOString(),
           status: 'active',
           runsAfterMutation: 0,
-          failureRateBefore: this.computeFailureRate(rule.concern, library),
+          failureRateBefore: this.computeFailureRate(rule.concern, library, projectName),
           failureRateAfter: 0,
           promptPatch: rule.patch,
         };
@@ -598,12 +613,11 @@ export class StrategyEvolutionEngine {
       }
     }
 
-    // Update baseline failure rates
+    // Update baseline failure rates (scoped to project)
     for (const concern of Object.keys(this.db.baselineFailureRates) as ConcernArea[]) {
-      const hasActiveMutation = this.db.activeMutations.some(m => m.concern === concern);
+      const hasActiveMutation = activeForProject.some(m => m.concern === concern);
       if (!hasActiveMutation) {
-        // Only update baseline when no mutation is active for this concern
-        this.db.baselineFailureRates[concern] = this.computeFailureRate(concern, library);
+        this.db.baselineFailureRates[concern] = this.computeFailureRate(concern, library, projectName);
       }
     }
 
@@ -623,12 +637,16 @@ export class StrategyEvolutionEngine {
 
   /**
    * Generate a strategy evolution section for injection into the Test Strategy
-   * Agent prompt. Only includes active + confirmed mutations.
+   * Agent prompt. Only includes active + confirmed mutations for this project.
    */
-  generateStrategyPromptSection(): string {
+  generateStrategyPromptSection(projectName?: string): string {
     const mutations = [
-      ...this.db.activeMutations.filter(m => m.status === 'active'),
-      ...this.db.mutationHistory.filter(m => m.status === 'confirmed'),
+      ...this.db.activeMutations.filter(m =>
+        m.status === 'active' && (!projectName || m.projectName === projectName)
+      ),
+      ...this.db.mutationHistory.filter(m =>
+        m.status === 'confirmed' && (!projectName || m.projectName === projectName)
+      ),
     ];
 
     if (mutations.length === 0) return '';
@@ -687,24 +705,29 @@ export class StrategyEvolutionEngine {
   }
 
   /**
-   * Get active mutations as structured data (for programmatic use).
+   * Get active mutations as structured data. Optionally filtered by project.
    */
-  getActiveMutations(): StrategyMutation[] {
-    return [...this.db.activeMutations];
+  getActiveMutations(projectName?: string): StrategyMutation[] {
+    if (!projectName) return [...this.db.activeMutations];
+    return this.db.activeMutations.filter(m => m.projectName === projectName);
   }
 
   /**
-   * Get all confirmed mutations (proven effective).
+   * Get all confirmed mutations (proven effective). Optionally filtered by project.
    */
-  getConfirmedMutations(): StrategyMutation[] {
-    return this.db.mutationHistory.filter(m => m.status === 'confirmed');
+  getConfirmedMutations(projectName?: string): StrategyMutation[] {
+    const confirmed = this.db.mutationHistory.filter(m => m.status === 'confirmed');
+    if (!projectName) return confirmed;
+    return confirmed.filter(m => m.projectName === projectName);
   }
 
   /**
-   * Get full mutation history for reporting.
+   * Get full mutation history for reporting. Optionally filtered by project.
    */
-  getMutationHistory(): StrategyMutation[] {
-    return [...this.db.activeMutations, ...this.db.mutationHistory];
+  getMutationHistory(projectName?: string): StrategyMutation[] {
+    const all = [...this.db.activeMutations, ...this.db.mutationHistory];
+    if (!projectName) return all;
+    return all.filter(m => m.projectName === projectName);
   }
 
   get totalRuns(): number {
@@ -762,9 +785,9 @@ export class StrategyEvolutionEngine {
 
   /**
    * Compute failure rate for a concern area based on experience library data.
-   * Maps concern areas to experience library tags.
+   * Scoped to project: only counts this project's patterns + global patterns.
    */
-  private computeFailureRate(concern: ConcernArea, library: ExperienceLibrary): number {
+  private computeFailureRate(concern: ConcernArea, library: ExperienceLibrary, projectName: string = 'default'): number {
     const CONCERN_TAGS: Record<ConcernArea, string[]> = {
       'element-interaction': ['selector', 'click', 'z-index', 'stale'],
       'data-validation': ['data', 'mismatch', 'encoding'],
@@ -777,8 +800,13 @@ export class StrategyEvolutionEngine {
 
     const tags = CONCERN_TAGS[concern] || [];
     const relevant = library.query(...tags);
-    const failures = relevant.filter(e => e.category === 'failure_pattern');
-    const fixes = relevant.filter(e => e.category === 'fix_strategy');
+
+    // Scope: only this project + global
+    const scoped = relevant.filter(e =>
+      e.scope === 'global' || e.projectName === projectName
+    );
+    const failures = scoped.filter(e => e.category === 'failure_pattern');
+    const fixes = scoped.filter(e => e.category === 'fix_strategy');
 
     if (failures.length === 0) return 0;
 
