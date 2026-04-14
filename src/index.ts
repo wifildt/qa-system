@@ -17,7 +17,7 @@ export { ProjectAdapter } from './engine/project-adapter.js';
 export { evolvePrompt, evolveAllPrompts } from './engine/prompt-evolution.js';
 export { RuleScoringSystem } from './engine/rule-scoring.js';
 export { StrategyEvolutionEngine } from './engine/strategy-evolution.js';
-export { ClaudeCodeRunner, buildTestGenerationTasks } from './engine/claude-code-runner.js';
+export { ClaudeCodeRunner, buildTestGenerationTasks, buildTestsFromPlan } from './engine/claude-code-runner.js';
 
 // Types
 export type { EngineReport, ValidationResult, Violation } from './engine/validation-engine.js';
@@ -37,4 +37,5 @@ export type {
   RunnerConfig,
   AgentTask,
   RunResult,
+  GenerateOptions,
 } from './engine/claude-code-runner.js';

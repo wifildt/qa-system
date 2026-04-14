@@ -168,20 +168,63 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
   if (modelOverride) console.log(`Model: ${CYAN}${modelOverride}${RESET}`);
   console.log();
 
-  // ── Phase 1: Generate (optional) ──────────────────────────────────
+  // ── Phase 1: Generate (2-step: plan → generate) ──────────────────
   if (!skipGenerate && fs.existsSync(cfgPath)) {
-    console.log(`${YELLOW}[Phase 1/7] Generating tests...${RESET}`);
-    const { ClaudeCodeRunner, buildTestGenerationTasks } = await import('../src/engine/claude-code-runner.js');
+    const { ClaudeCodeRunner, buildTestGenerationTasks, buildTestsFromPlan } = await import('../src/engine/claude-code-runner.js');
     const config = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const projectRoot = config.project?.root || path.dirname(cfgPath);
-    const tasks = buildTestGenerationTasks(cfgPath, SRC_DIR.replace('/src', ''));
+    const runner = new ClaudeCodeRunner({ projectRoot, frameworkRoot: SRC_DIR.replace('/src', ''), model: modelOverride });
 
-    if (tasks.length > 0) {
-      const runner = new ClaudeCodeRunner({ projectRoot, frameworkRoot: SRC_DIR.replace('/src', ''), model: modelOverride });
-      const results = await runner.runPipeline(tasks);
-      const passed = results.filter(r => r.success).length;
-      const failed = results.filter(r => !r.success).length;
-      console.log(`${GREEN}Generated: ${passed}${RESET}${failed > 0 ? `  ${RED}Failed: ${failed}${RESET}` : ''}\n`);
+    // Parse generate options
+    const genOptions: any = {};
+    if (flags['sections'] && typeof flags['sections'] === 'string') {
+      genOptions.sections = (flags['sections'] as string).split(',');
+    }
+    if (flags['describe'] && typeof flags['describe'] === 'string') {
+      genOptions.describe = flags['describe'] as string;
+    }
+
+    const gen = buildTestGenerationTasks(cfgPath, SRC_DIR.replace('/src', ''), 0, genOptions);
+
+    if (gen) {
+      // Step 1a: Auth fixture (if needed)
+      if (gen.authTask) {
+        console.log(`${YELLOW}[Phase 1a/7] Generating auth fixture...${RESET}`);
+        const authResult = await runner.run(gen.authTask);
+        if (authResult.success) {
+          console.log(`${GREEN}Auth fixture generated${RESET}`);
+        } else {
+          console.log(`${RED}Auth fixture failed: ${authResult.error?.slice(0, 100)}${RESET}`);
+        }
+      }
+
+      // Step 1b: Generate test plan (claude reads project → outputs JSON plan)
+      console.log(`${YELLOW}[Phase 1b/7] Planning test strategy...${RESET}`);
+      const planResult = await runner.run(gen.planTask);
+
+      if (planResult.success) {
+        const planPath = path.resolve(projectRoot, 'qa-system', 'test-plan.json');
+        if (fs.existsSync(planPath)) {
+          const plan = JSON.parse(fs.readFileSync(planPath, 'utf-8'));
+          const fileCount = plan.testFiles?.length || 0;
+          console.log(`${GREEN}Test plan: ${fileCount} test file(s) planned${RESET}`);
+
+          // Step 1c: Generate test files from plan (parallel)
+          if (fileCount > 0) {
+            console.log(`${YELLOW}[Phase 1c/7] Generating ${fileCount} test file(s) (parallel)...${RESET}`);
+            const testTasks = buildTestsFromPlan(planPath, projectRoot, gen.context, gen.rulesContext);
+            const testResults = await runner.runParallel(testTasks, 3);
+            const passed = testResults.filter(r => r.success).length;
+            const failed = testResults.filter(r => !r.success).length;
+            console.log(`${GREEN}Generated: ${passed}${RESET}${failed > 0 ? `  ${RED}Failed: ${failed}${RESET}` : ''}`);
+          }
+        } else {
+          console.log(`${RED}Test plan not created — claude may have failed to write JSON${RESET}`);
+        }
+      } else {
+        console.log(`${RED}Plan generation failed: ${planResult.error?.slice(0, 200)}${RESET}`);
+      }
+      console.log();
     } else {
       console.log(`${DIM}No features in config — skipping generation${RESET}\n`);
     }
@@ -405,7 +448,7 @@ async function cmdExperience(flags: Record<string, boolean | string>): Promise<v
 }
 
 async function cmdGenerate(configPath?: string, flags: Record<string, boolean | string> = {}): Promise<void> {
-  const { ClaudeCodeRunner, buildTestGenerationTasks } = await import('../src/engine/claude-code-runner.js');
+  const { ClaudeCodeRunner, buildTestGenerationTasks, buildTestsFromPlan } = await import('../src/engine/claude-code-runner.js');
 
   const cfgPath = configPath || path.resolve('qa-system', 'project.config.json');
   if (!fs.existsSync(cfgPath)) {
@@ -419,54 +462,84 @@ async function cmdGenerate(configPath?: string, flags: Record<string, boolean | 
   const featureIndex = flags['feature'] ? parseInt(flags['feature'] as string, 10) : 0;
   const modelOverride = flags['model'] as string | undefined;
 
-  console.log(`\n${BOLD}QA Framework — Test Generation (via Claude Code CLI)${RESET}`);
+  // Parse generate options
+  const genOptions: any = {};
+  if (flags['sections'] && typeof flags['sections'] === 'string') {
+    genOptions.sections = (flags['sections'] as string).split(',');
+  }
+  if (flags['describe'] && typeof flags['describe'] === 'string') {
+    genOptions.describe = flags['describe'] as string;
+  }
+
+  console.log(`\n${BOLD}QA Framework — Test Generation${RESET}`);
   console.log(`Project: ${CYAN}${config.project?.name}${RESET}`);
   console.log(`Feature: ${CYAN}${config.features?.[featureIndex]?.name || 'default'}${RESET}`);
-  if (modelOverride) console.log(`Model override: ${CYAN}${modelOverride}${RESET}`);
+  if (modelOverride) console.log(`Model: ${CYAN}${modelOverride}${RESET}`);
+  if (genOptions.sections) console.log(`Sections: ${CYAN}${genOptions.sections.join(', ')}${RESET}`);
+  if (genOptions.describe) console.log(`Scope: ${CYAN}${genOptions.describe}${RESET}`);
   console.log();
 
-  // Build tasks
-  const tasks = buildTestGenerationTasks(cfgPath, SRC_DIR.replace('/src', ''), featureIndex);
-  if (tasks.length === 0) {
-    console.log(`${YELLOW}No features found in config. Add features to project.config.json.${RESET}`);
+  const gen = buildTestGenerationTasks(cfgPath, SRC_DIR.replace('/src', ''), featureIndex, genOptions);
+  if (!gen) {
+    console.log(`${YELLOW}No features found in config.${RESET}`);
     return;
   }
 
-  console.log(`${DIM}Tasks: ${tasks.length}${RESET}`);
-  for (const t of tasks) {
-    console.log(`  ${DIM}[${t.agentType}] → ${t.outputFile || '(stdout)'}${RESET}`);
+  const runner = new ClaudeCodeRunner({ projectRoot, model: modelOverride, frameworkRoot: SRC_DIR.replace('/src', '') });
+
+  // Step 1: Auth fixture
+  if (gen.authTask) {
+    console.log(`${YELLOW}[1/3] Generating auth fixture...${RESET}`);
+    const authResult = await runner.run(gen.authTask);
+    console.log(authResult.success ? `${GREEN}Auth fixture ready${RESET}` : `${RED}Auth failed: ${authResult.error?.slice(0, 100)}${RESET}`);
+  } else {
+    console.log(`${DIM}[1/3] Auth fixture exists — skipping${RESET}`);
   }
-  console.log();
 
-  // Run
-  const runner = new ClaudeCodeRunner({
-    projectRoot,
-    model: modelOverride,
-    frameworkRoot: SRC_DIR.replace('/src', ''),
-  });
+  // Step 2: Test plan
+  console.log(`${YELLOW}[2/3] Planning test strategy...${RESET}`);
+  const planResult = await runner.run(gen.planTask);
 
-  const results = await runner.runPipeline(tasks);
+  if (!planResult.success) {
+    console.log(`${RED}Plan failed: ${planResult.error?.slice(0, 200)}${RESET}`);
+    return;
+  }
 
-  // Report
-  let passed = 0;
-  let failed = 0;
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    const t = tasks[i];
-    if (r.success) {
-      passed++;
-      console.log(`${GREEN}DONE${RESET} [${t.agentType}] ${(r.durationMs / 1000).toFixed(1)}s${r.outputFile ? ` → ${path.basename(r.outputFile)}` : ''}`);
-    } else {
-      failed++;
-      console.log(`${RED}FAIL${RESET} [${t.agentType}] ${r.error?.slice(0, 200)}`);
+  const planPath = path.resolve(projectRoot, 'qa-system', 'test-plan.json');
+  if (!fs.existsSync(planPath)) {
+    console.log(`${RED}Plan file not created${RESET}`);
+    return;
+  }
+
+  const plan = JSON.parse(fs.readFileSync(planPath, 'utf-8'));
+  const fileCount = plan.testFiles?.length || 0;
+  console.log(`${GREEN}Plan: ${fileCount} test file(s)${RESET}`);
+  for (const tf of plan.testFiles || []) {
+    console.log(`  ${DIM}${tf.path} — ${tf.description}${RESET}`);
+  }
+
+  // Step 3: Generate from plan (parallel)
+  if (fileCount > 0) {
+    console.log(`\n${YELLOW}[3/3] Generating ${fileCount} test file(s)...${RESET}`);
+    const testTasks = buildTestsFromPlan(planPath, projectRoot, gen.context, gen.rulesContext);
+    const testResults = await runner.runParallel(testTasks, 3);
+
+    for (let i = 0; i < testResults.length; i++) {
+      const r = testResults[i];
+      const t = testTasks[i];
+      if (r.success) {
+        console.log(`${GREEN}DONE${RESET} ${(r.durationMs / 1000).toFixed(1)}s → ${t.outputFile}`);
+      } else {
+        console.log(`${RED}FAIL${RESET} ${t.outputFile}: ${r.error?.slice(0, 150)}`);
+      }
     }
+
+    const passed = testResults.filter(r => r.success).length;
+    const failed = testResults.filter(r => !r.success).length;
+    console.log(`\n${GREEN}Generated: ${passed}${RESET}${failed > 0 ? `  ${RED}Failed: ${failed}${RESET}` : ''}`);
   }
 
-  console.log(`\n${passed > 0 ? GREEN : ''}Generated: ${passed}${RESET}  ${failed > 0 ? RED : ''}Failed: ${failed}${RESET}`);
-
-  if (passed > 0) {
-    console.log(`\nNext: ${CYAN}qa validate --config ${cfgPath}${RESET}`);
-  }
+  console.log(`\nNext: ${CYAN}qa validate --config ${cfgPath}${RESET}`);
 }
 
 async function cmdEvolve(flags: Record<string, boolean | string>, target?: string): Promise<void> {

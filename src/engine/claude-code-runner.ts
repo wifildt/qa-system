@@ -44,9 +44,9 @@ const DEFAULT_EFFORT = 'high';
 const AGENT_TIMEOUTS: Record<string, number> = {
   'auth-fixture':         120_000,
   'file-reader':           60_000,
-  'ui-test-generator':    300_000,
-  'api-test-generator':   300_000,
-  'state-test-generator': 300_000,
+  'ui-test-generator':    600_000,
+  'api-test-generator':   600_000,
+  'state-test-generator': 600_000,
   'feature-understanding':300_000,
   'test-strategy':        300_000,
   'consistency-analysis': 180_000,
@@ -345,124 +345,254 @@ export class ClaudeCodeRunner {
       });
     });
   }
+
+  // --------------------------------------------------------------------------
+  // PARALLEL EXECUTION
+  // --------------------------------------------------------------------------
+
+  /**
+   * Run multiple tasks concurrently with limited concurrency.
+   */
+  async runParallel(tasks: AgentTask[], concurrency: number = 3): Promise<RunResult[]> {
+    const results: RunResult[] = new Array(tasks.length);
+    const queue = tasks.map((t, i) => ({ task: t, index: i }));
+
+    const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+      while (queue.length > 0) {
+        const item = queue.shift()!;
+        results[item.index] = await this.run(item.task);
+        if (!results[item.index].success) {
+          console.error(`[PARALLEL] Task "${item.task.agentType}" failed: ${results[item.index].error}`);
+        }
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
+  }
 }
 
 // ============================================================================
-// PRESET TASKS — Common agent tasks ready to use
+// TEST GENERATION — 2-step: plan then generate
 // ============================================================================
 
+export interface GenerateOptions {
+  /** Target specific sections by ID */
+  sections?: string[];
+  /** Free-text description of what to test */
+  describe?: string;
+}
+
 /**
- * Build agent tasks for a specific feature from project config.
+ * Build shared project context string from config.
  */
-export function buildTestGenerationTasks(
-  projectConfigPath: string,
-  frameworkRoot: string,
-  featureIndex: number = 0,
-): AgentTask[] {
-  const config = JSON.parse(fs.readFileSync(projectConfigPath, 'utf-8'));
-  const feature = config.features?.[featureIndex];
-  if (!feature) return [];
-
-  const projectRoot = config.project.root;
-  const tasks: AgentTask[] = [];
-
-  // Read project context
-  const contextParts: string[] = [
+function buildProjectContext(config: any, feature: any): string {
+  const parts: string[] = [
     `Project: ${config.project.name}`,
     `Framework: ${config.framework.name} + ${config.framework.ui_library}`,
     `State: ${config.state.manager} + ${config.state.side_effects}`,
     `Feature: ${feature.name}`,
-    `Pages glob: ${feature.pages_glob?.join(', ')}`,
+    `Pages: ${feature.pages_glob?.join(', ')}`,
     `Store module: ${feature.store_module}`,
     `Entry URL: ${feature.entry_url}`,
     `Roles: ${feature.roles?.join(', ')}`,
   ];
 
-  // Auth info
   if (config.auth?.accounts) {
-    contextParts.push('\nTest Accounts:');
+    parts.push('\nTest Accounts:');
     for (const [role, acc] of Object.entries(config.auth.accounts) as any) {
-      contextParts.push(`  ${role}: ${acc.credentials.username} / ${acc.credentials.password} (${acc.description})`);
+      parts.push(`  ${role}: ${acc.credentials.username} / ${acc.credentials.password} (${acc.description})`);
     }
   }
 
-  // Sections
   if (feature.sections) {
-    contextParts.push('\nSections to test:');
+    parts.push('\nFeature sections:');
     for (const s of feature.sections) {
-      contextParts.push(`  - ${s.id}: ${s.name} (component: ${s.component})`);
+      parts.push(`  - ${s.id}: ${s.name}${s.component ? ` (component: ${s.component})` : ''}`);
     }
   }
 
-  const context = contextParts.join('\n');
+  return parts.join('\n');
+}
 
-  // Load rules for context
+/**
+ * Load validation rules as context string.
+ */
+function loadRulesContext(): string {
   const rulesDir = frameworkAsset('src', 'rules');
-  let rulesContext = '';
-  if (fs.existsSync(rulesDir)) {
-    const ruleFiles = fs.readdirSync(rulesDir).filter(f => f.endsWith('.json'));
-    rulesContext = '\n--- VALIDATION RULES (tests MUST comply) ---\n';
-    for (const rf of ruleFiles) {
+  if (!fs.existsSync(rulesDir)) return '';
+
+  const ruleFiles = fs.readdirSync(rulesDir).filter(f => f.endsWith('.json'));
+  let ctx = '\n--- VALIDATION RULES (generated tests MUST comply) ---\n';
+  for (const rf of ruleFiles) {
+    try {
       const rules = JSON.parse(fs.readFileSync(path.join(rulesDir, rf), 'utf-8'));
-      rulesContext += `\n[${rf}]\n`;
+      ctx += `\n[${rf}]\n`;
       if (Array.isArray(rules.rules)) {
         for (const r of rules.rules) {
-          rulesContext += `- ${r.id}: ${r.description}\n`;
+          ctx += `- ${r.id}: ${r.description}\n`;
         }
       }
-    }
+    } catch { /* skip bad rule file */ }
   }
+  return ctx;
+}
 
-  // Task 1: Generate auth fixture
-  tasks.push({
+/**
+ * Common test generation rules included in every prompt.
+ */
+const TEST_RULES = `
+STRICT TEST RULES:
+- Import { test, expect, BASE_URL } from "../../fixtures/auth"
+- Use the pre-authenticated page fixtures (gvcnPage, adminPage, teacherPage)
+- Every test MUST call page.screenshot() for evidence capture
+- Use getByRole/getByText/getByLabel — NEVER use CSS class selectors (.ant-*, .sc-*)
+- NO page.waitForTimeout() — use waitForResponse or waitForLoadState
+- For data mutations: intercept API with page.waitForResponse()
+- For Ant Design Select: use getByRole("combobox"), click with { force: true }
+- Login URL is /dang-nhap (NOT /login)
+`.trim();
+
+/**
+ * Build auth fixture task (if not already generated).
+ */
+function buildAuthTask(config: any, context: string, rulesContext: string): AgentTask | null {
+  const authPath = path.join(config.project.root, 'qa-system', 'fixtures', 'auth.ts');
+  if (fs.existsSync(authPath)) return null;
+
+  return {
     agentType: 'auth-fixture',
     prompt: [
-      `Read the login page at src/Pages/Authentication/ in the project root.`,
-      `Understand how login works — what form fields, what selectors, what API endpoint.`,
-      `Then generate a Playwright auth fixture at qa-system/fixtures/auth.ts that:`,
+      `Read the login page source code in the project (look in src/Pages/Authentication/).`,
+      `Understand: form fields, selectors, submit button, login API endpoint, redirect behavior.`,
+      `Generate a Playwright auth fixture at qa-system/fixtures/auth.ts that:`,
       `1. Imports from "playwright/test" (NOT "@playwright/test")`,
-      `2. Exports loginAs(page, role) function`,
-      `3. Exports extended test fixture with pre-authenticated pages for each role`,
-      `4. Uses http://localhost:3001 as BASE_URL`,
-      `5. Uses the real login form selectors from the actual code`,
-      `6. Includes the test accounts from the config below`,
+      `2. Exports loginAs(page, role) function using real selectors from the code`,
+      `3. Exports extended test fixture with pre-authenticated pages per role`,
+      `4. Uses the BASE_URL and accounts from config below`,
     ].join('\n'),
     outputFile: 'qa-system/fixtures/auth.ts',
     context: context + rulesContext,
-  });
+  };
+}
 
-  // Task 2+: Generate UI tests per section (one task per section, keeps scope narrow)
-  const sections = feature.sections || [];
-  const sectionsToTest = sections.slice(0, 3); // Start with first 3 critical sections
+/**
+ * Build the test plan task — claude reads project and outputs a plan JSON.
+ */
+function buildPlanTask(config: any, feature: any, context: string, rulesContext: string, options: GenerateOptions): AgentTask {
+  const scopeInstruction = options.describe
+    ? `USER REQUEST: "${options.describe}"\nGenerate tests specifically for what the user described.`
+    : options.sections?.length
+      ? `TARGET SECTIONS: ${options.sections.join(', ')}\nGenerate tests only for these sections.`
+      : `Generate comprehensive tests for ALL sections of this feature.`;
 
-  // First: a navigation + page load test
-  tasks.push({
+  return {
+    agentType: 'test-strategy',
+    prompt: [
+      `You are a QA test strategist. Read the project source code and create a test plan.`,
+      ``,
+      `${scopeInstruction}`,
+      ``,
+      `STEPS:`,
+      `1. Read the feature's page components (${feature.pages_glob?.join(', ')})`,
+      `2. Read the store module (src/${feature.store_module}/) to understand API calls`,
+      `3. Read qa-system/fixtures/auth.ts to understand available auth fixtures`,
+      `4. Analyze each section: is it view-only, form+save, CRUD table, statistics, or per-student?`,
+      `5. Group related sections into logical test files`,
+      `6. Output a JSON test plan`,
+      ``,
+      `OUTPUT FORMAT — write a JSON file to qa-system/test-plan.json:`,
+      `{`,
+      `  "testFiles": [`,
+      `    {`,
+      `      "path": "qa-system/test/ui/<filename>.spec.ts",`,
+      `      "description": "What this test file covers",`,
+      `      "sections": ["section-id-1", "section-id-2"],`,
+      `      "readFiles": ["src/path/to/Component1.jsx", "src/path/to/Component2.jsx"],`,
+      `      "testScenarios": ["scenario 1 description", "scenario 2 description"]`,
+      `    }`,
+      `  ]`,
+      `}`,
+      ``,
+      `GUIDELINES:`,
+      `- Group 2-4 related sections per test file (don't make 20 files)`,
+      `- Each test file should have 3-6 test scenarios`,
+      `- Include readFiles — the specific component files claude should read when generating`,
+      `- Always include a "navigation" test file that covers page load + sidebar navigation`,
+      `- For CRUD sections: include add/edit/delete scenarios`,
+      `- For form sections: include edit/save/dirty-guard scenarios`,
+      `- For view-only sections: just navigation + verify render`,
+    ].join('\n'),
+    outputFile: 'qa-system/test-plan.json',
+    context: context + rulesContext,
+  };
+}
+
+/**
+ * Build test generation tasks from a test plan JSON.
+ */
+export function buildTestsFromPlan(
+  planPath: string,
+  projectRoot: string,
+  context: string,
+  rulesContext: string,
+): AgentTask[] {
+  if (!fs.existsSync(planPath)) return [];
+
+  let plan: any;
+  try {
+    plan = JSON.parse(fs.readFileSync(planPath, 'utf-8'));
+  } catch {
+    console.error(`[PLAN] Failed to parse test-plan.json`);
+    return [];
+  }
+
+  if (!plan.testFiles || !Array.isArray(plan.testFiles)) return [];
+
+  return plan.testFiles.map((tf: any) => ({
     agentType: 'ui-test-generator',
     prompt: [
-      `Generate a Playwright E2E test for the "${feature.name}" feature.`,
+      `Generate a Playwright E2E test file.`,
       ``,
-      `Read ONLY these files to understand the page:`,
-      `- src/${feature.pages_glob?.[0]?.replace('/**', '')}/index.jsx`,
-      `- src/${feature.pages_glob?.[0]?.replace('/**', '')}/SoChuNhiem.jsx (if exists)`,
-      `- src/${feature.pages_glob?.[0]?.replace('/**', '')}/NotebookDialog/index.jsx (if exists)`,
-      `- qa-system/fixtures/auth.ts (to understand the auth fixture)`,
+      `WHAT TO TEST: ${tf.description}`,
+      `Sections: ${tf.sections?.join(', ')}`,
       ``,
-      `Generate tests that cover:`,
-      `1. Login as GVCN → navigate to ${feature.entry_url} → verify page loads`,
-      `2. Click to open notebook → verify dialog appears (use API intercept as signal)`,
-      `3. Login as Admin → navigate to admin URL → verify filter controls visible`,
+      `READ THESE FILES to understand the components:`,
+      ...(tf.readFiles || []).map((f: string) => `- ${f}`),
+      `- qa-system/fixtures/auth.ts (for auth fixture imports)`,
       ``,
-      `STRICT RULES:`,
-      `- Import { test, expect, BASE_URL } from "../../fixtures/auth"`,
-      `- Every test MUST call page.screenshot() for evidence capture`,
-      `- Use getByRole/getByText/getByLabel — NEVER use CSS class selectors like .ant-*`,
-      `- NO page.waitForTimeout() — use waitForResponse or waitForLoadState`,
-      `- For data checks: use page.waitForResponse() to intercept API calls`,
-      `- Write the file to: qa-system/test/ui/scn-critical-paths.spec.ts`,
+      `TEST SCENARIOS to implement:`,
+      ...(tf.testScenarios || []).map((s: string, i: number) => `${i + 1}. ${s}`),
+      ``,
+      TEST_RULES,
+      ``,
+      `Write the file to: ${tf.path}`,
     ].join('\n'),
-    outputFile: 'qa-system/test/ui/scn-critical-paths.spec.ts',
+    outputFile: tf.path,
     context,
-  });
+  }));
+}
 
-  return tasks;
+/**
+ * Build all test generation tasks for a feature.
+ * 2-step process: returns auth + plan tasks first.
+ * After plan executes, call buildTestsFromPlan() for the actual test tasks.
+ */
+export function buildTestGenerationTasks(
+  projectConfigPath: string,
+  frameworkRoot: string,
+  featureIndex: number = 0,
+  options: GenerateOptions = {},
+): { authTask: AgentTask | null; planTask: AgentTask; config: any; context: string; rulesContext: string } | null {
+  const config = JSON.parse(fs.readFileSync(projectConfigPath, 'utf-8'));
+  const feature = config.features?.[featureIndex];
+  if (!feature) return null;
+
+  const context = buildProjectContext(config, feature);
+  const rulesContext = loadRulesContext();
+
+  const authTask = buildAuthTask(config, context, rulesContext);
+  const planTask = buildPlanTask(config, feature, context, rulesContext, options);
+
+  return { authTask, planTask, config, context, rulesContext };
 }
