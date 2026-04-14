@@ -1,6 +1,6 @@
 {
   "name": "@ldtdev/qa-system",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "Self-learning QA framework for frontend apps. Detect conventions, generate tests (via Claude Code CLI), validate, execute, self-heal, learn, evolve strategy.",
   "type": "module",
   "main": "./dist/src/index.js",
