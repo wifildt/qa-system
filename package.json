@@ -1,5 +1,5 @@
 {
-  "name": "qa-system",
+  "name": "@ldtdev/qa-system",
   "version": "1.0.0",
   "description": "Self-learning QA framework for frontend apps. Detect conventions, generate tests (via Claude Code CLI), validate, execute, self-heal, learn, evolve strategy.",
   "type": "module",
