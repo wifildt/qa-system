@@ -170,7 +170,7 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
 
   // ── Phase 1: Generate (optional) ──────────────────────────────────
   if (!skipGenerate && fs.existsSync(cfgPath)) {
-    console.log(`${YELLOW}[Phase 1/6] Generating tests...${RESET}`);
+    console.log(`${YELLOW}[Phase 1/7] Generating tests...${RESET}`);
     const { ClaudeCodeRunner, buildTestGenerationTasks } = await import('../src/engine/claude-code-runner.js');
     const config = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const projectRoot = config.project?.root || path.dirname(cfgPath);
@@ -186,11 +186,11 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
       console.log(`${DIM}No features in config — skipping generation${RESET}\n`);
     }
   } else if (skipGenerate) {
-    console.log(`${DIM}[Phase 1/6] Skipping generation (--skip-generate)${RESET}\n`);
+    console.log(`${DIM}[Phase 1/7] Skipping generation (--skip-generate)${RESET}\n`);
   }
 
   // ── Phase 2: Validate ─────────────────────────────────────────────
-  console.log(`${YELLOW}[Phase 2/6] Validating tests...${RESET}`);
+  console.log(`${YELLOW}[Phase 2/7] Validating tests...${RESET}`);
   const { runEngine } = await import('../src/engine/validation-engine.js');
 
   const testDir = path.join(qaDir, 'test');
@@ -211,13 +211,13 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
   // ── Phase 3: Execute (Playwright) ─────────────────────────────────
   const resultsPath = path.join(qaDir, 'reports', 'execution-results.json');
   if (!skipExecute) {
-    console.log(`${YELLOW}[Phase 3/6] Executing tests (Playwright)...${RESET}`);
-    const playwrightConfig = path.join(qaDir, 'playwright.config.ts');
-    const configFlag = fs.existsSync(playwrightConfig) ? `--config=${playwrightConfig}` : '';
+    console.log(`${YELLOW}[Phase 3/7] Executing tests (Playwright)...${RESET}`);
+    const playwrightConfig = path.resolve(qaDir, 'playwright.config.ts');
+    const configFlag = fs.existsSync(playwrightConfig) ? `--config=playwright.config.ts` : '';
 
     try {
       execSync(`npx playwright test ${configFlag}`, {
-        cwd: qaDir,
+        cwd: path.resolve(qaDir),
         stdio: 'inherit',
         timeout: 300_000,
       });
@@ -227,12 +227,12 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
       // Continue pipeline — healing will attempt fixes
     }
   } else {
-    console.log(`${DIM}[Phase 3/6] Skipping execution (--skip-execute)${RESET}\n`);
+    console.log(`${DIM}[Phase 3/7] Skipping execution (--skip-execute)${RESET}\n`);
   }
 
   // ── Phase 4: Heal ─────────────────────────────────────────────────
   if (fs.existsSync(resultsPath)) {
-    console.log(`${YELLOW}[Phase 4/6] Self-healing from results...${RESET}`);
+    console.log(`${YELLOW}[Phase 4/7] Self-healing from results...${RESET}`);
     const { heal } = await import('../src/engine/self-healing-agent.js');
     const healReport = heal(resultsPath, flags['dry-run'] === true);
 
@@ -244,11 +244,11 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
     }
     console.log();
   } else {
-    console.log(`${DIM}[Phase 4/6] No execution results — skipping heal${RESET}\n`);
+    console.log(`${DIM}[Phase 4/7] No execution results — skipping heal${RESET}\n`);
   }
 
   // ── Phase 5: Learn ────────────────────────────────────────────────
-  console.log(`${YELLOW}[Phase 5/6] Extracting experience...${RESET}`);
+  console.log(`${YELLOW}[Phase 5/7] Extracting experience...${RESET}`);
   const { ExperienceLibrary } = await import('../src/engine/experience-library.js');
   const { extractExperiences } = await import('../src/engine/experience-extractor.js');
 
@@ -268,7 +268,7 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
   console.log();
 
   // ── Phase 6: Evolve ───────────────────────────────────────────────
-  console.log(`${YELLOW}[Phase 6/6] Strategy evolution...${RESET}`);
+  console.log(`${YELLOW}[Phase 6/7] Strategy evolution...${RESET}`);
   const { StrategyEvolutionEngine } = await import('../src/engine/strategy-evolution.js');
   const stratPath = path.join(qaDir, 'strategy-evolution-db.json');
   const stratEngine = StrategyEvolutionEngine.load(stratPath);
