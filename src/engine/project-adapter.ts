@@ -1,22 +1,6 @@
 /**
- * ============================================================================
- * PROJECT ADAPTER — Normalizes any repo into standard agent input
- * ============================================================================
- *
- * All agents read from this adapter instead of directly from the filesystem.
- * The adapter reads project.config.json and exposes a unified API.
- *
- * This is the ONLY point of contact between the QA system and the target repo.
- * Change the config → everything adapts. No agent code changes needed.
- *
- * Usage:
- *   const project = ProjectAdapter.load('projects/scn-thoikhoabieu.config.json');
- *   project.getSourceGlobs()        → ['src/Pages/Teacher/HomeroomBook/**/*.jsx']
- *   project.getStoreGlobs()         → ['src/store/modules/homeroomNotebook/**/*.js']
- *   project.getAuthForRole('gvcn')  → { username, password, entryRoute }
- *   project.getAPIBase()            → 'https://slldt.lms360.vn/api/v3'
- *   project.getSelectorStrategy()   → { priority: [...], forbidden: [...] }
- * ============================================================================
+ * PROJECT ADAPTER - Normalizes any repo into standard agent input.
+ * Reads project.config.json and exposes a unified API for all agents.
  */
 
 import * as fs from 'fs';

@@ -323,8 +323,8 @@ function main(): void {
   const args = process.argv.slice(2);
   const projectName = args.find(a => !a.startsWith('--')) || 'unknown';
 
-  const reportsDir = path.resolve(__dirname, '..', '..', 'reports');
-  const dbPath = path.resolve(__dirname, '..', '..', 'analysis', 'experience-db.json');
+  const reportsDir = path.resolve(process.cwd(), 'qa-system', 'reports');
+  const dbPath = path.resolve(process.cwd(), 'qa-system', 'experience-db.json');
 
   const library = ExperienceLibrary.load(dbPath);
 

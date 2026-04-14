@@ -26,3 +26,7 @@ Thumbs.db
 # Env
 .env
 .env.local
+.claude
+
+# Local qa-system data
+qa-system/

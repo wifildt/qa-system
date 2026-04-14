@@ -608,8 +608,7 @@ function main(): void {
 
   if (args.includes('--all')) {
     // Find all test files in qa-system/test/
-    const qaDir = path.resolve(__dirname, '..');
-    const testDir = path.join(qaDir, 'test');
+    const testDir = path.resolve(process.cwd(), 'qa-system', 'test');
     testFiles = findTestFiles(testDir);
   } else if (args.length > 0) {
     testFiles = args.filter((a) => !a.startsWith('--'));
@@ -631,7 +630,7 @@ function main(): void {
   printReport(report);
 
   // Write JSON report
-  const reportPath = path.resolve(__dirname, '..', 'reports', 'validation-report.json');
+  const reportPath = path.resolve(process.cwd(), 'qa-system', 'reports', 'validation-report.json');
   fs.mkdirSync(path.dirname(reportPath), { recursive: true });
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
   console.log(`JSON report: ${reportPath}`);

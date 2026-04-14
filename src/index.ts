@@ -4,6 +4,9 @@
  * Self-learning, multi-agent QA framework for frontend applications.
  */
 
+// Path resolution
+export { FRAMEWORK_ROOT, frameworkAsset, projectQaDir, projectReportsDir, projectDataFile } from './engine/paths.js';
+
 // Core engines
 export { ExperienceLibrary } from './engine/experience-library.js';
 export { extractExperiences } from './engine/experience-extractor.js';

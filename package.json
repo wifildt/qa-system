@@ -1,10 +1,10 @@
 {
-  "name": "@anthropic-qa/agent-framework",
-  "version": "0.1.0",
-  "description": "Self-learning, multi-agent QA framework for frontend applications. Config-driven, multi-repo, with enforcement + self-healing + experience library.",
+  "name": "qa-system",
+  "version": "1.0.0",
+  "description": "Self-learning QA framework for frontend apps. Detect conventions, generate tests (via Claude Code CLI), validate, execute, self-heal, learn, evolve strategy.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "bin": {
     "qa": "dist/bin/qa-cli.js"
   },
@@ -12,17 +12,21 @@
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "qa": "tsx bin/qa-cli.ts",
-    "detect": "tsx bin/qa-cli.ts detect",
-    "validate": "tsx bin/qa-cli.ts validate",
-    "run": "tsx bin/qa-cli.ts run",
-    "heal": "tsx bin/qa-cli.ts heal",
-    "experience": "tsx bin/qa-cli.ts experience",
     "test": "vitest run",
     "lint": "eslint src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "playwright": "^1.57.0"
+  },
+  "peerDependencies": {
+    "claude-code": "*"
+  },
+  "peerDependenciesMeta": {
+    "claude-code": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -35,9 +39,11 @@
   },
   "files": [
     "dist/",
-    "src/",
-    "presets/",
-    "bin/"
+    "src/rules/",
+    "src/prompts/",
+    "src/agents/",
+    "src/project-config.schema.json",
+    "presets/"
   ],
   "keywords": [
     "qa",
@@ -46,7 +52,13 @@
     "multi-agent",
     "self-healing",
     "ai-testing",
-    "experience-library"
+    "experience-library",
+    "strategy-evolution",
+    "claude-code"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wifildt/qa-system"
+  },
   "license": "MIT"
 }

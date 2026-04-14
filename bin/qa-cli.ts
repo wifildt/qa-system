@@ -145,20 +145,48 @@ async function cmdValidate(configPath?: string): Promise<void> {
 }
 
 async function cmdRun(configPath?: string, flags: Record<string, boolean | string> = {}): Promise<void> {
-  console.log(`\n${BOLD}QA Framework — Full Pipeline${RESET}`);
-  console.log(`${DIM}validate → execute → heal → extract experience → report${RESET}\n`);
+  const { execSync } = await import('child_process');
 
-  // Phase 1: Validate
-  console.log(`${YELLOW}[Phase 1] Validating tests...${RESET}`);
+  const qaDir = configPath ? path.dirname(configPath) : path.resolve('qa-system');
+  const projectName = configPath ? path.basename(configPath, '.config.json') : 'default';
+  const cfgPath = configPath || path.join(qaDir, 'project.config.json');
+  const skipGenerate = flags['skip-generate'] === true;
+  const skipExecute = flags['skip-execute'] === true;
+
+  console.log(`\n${BOLD}QA Framework — Full Pipeline${RESET}`);
+  console.log(`${DIM}generate → validate → execute → heal → learn → evolve${RESET}`);
+  console.log(`Project: ${CYAN}${projectName}${RESET}\n`);
+
+  // ── Phase 1: Generate (optional) ──────────────────────────────────
+  if (!skipGenerate && fs.existsSync(cfgPath)) {
+    console.log(`${YELLOW}[Phase 1/6] Generating tests...${RESET}`);
+    const { ClaudeCodeRunner, buildTestGenerationTasks } = await import('../src/engine/claude-code-runner.js');
+    const config = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    const projectRoot = config.project?.root || path.dirname(cfgPath);
+    const tasks = buildTestGenerationTasks(cfgPath, SRC_DIR.replace('/src', ''));
+
+    if (tasks.length > 0) {
+      const runner = new ClaudeCodeRunner({ projectRoot, frameworkRoot: SRC_DIR.replace('/src', '') });
+      const results = await runner.runPipeline(tasks);
+      const passed = results.filter(r => r.success).length;
+      const failed = results.filter(r => !r.success).length;
+      console.log(`${GREEN}Generated: ${passed}${RESET}${failed > 0 ? `  ${RED}Failed: ${failed}${RESET}` : ''}\n`);
+    } else {
+      console.log(`${DIM}No features in config — skipping generation${RESET}\n`);
+    }
+  } else if (skipGenerate) {
+    console.log(`${DIM}[Phase 1/6] Skipping generation (--skip-generate)${RESET}\n`);
+  }
+
+  // ── Phase 2: Validate ─────────────────────────────────────────────
+  console.log(`${YELLOW}[Phase 2/6] Validating tests...${RESET}`);
   const { runEngine } = await import('../src/engine/validation-engine.js');
 
-  const testDir = configPath
-    ? path.join(path.dirname(configPath), 'test')
-    : path.resolve('qa-system', 'test');
+  const testDir = path.join(qaDir, 'test');
   const testFiles = findFiles(testDir, ['.spec.ts', '.spec.js']);
 
   if (testFiles.length === 0) {
-    console.log(`${YELLOW}No test files found. Run 'qa detect' first.${RESET}`);
+    console.log(`${YELLOW}No test files found in ${testDir}. Run 'qa generate' first.${RESET}`);
     process.exit(0);
   }
 
@@ -169,15 +197,31 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
   }
   console.log(`${GREEN}Validation passed: ${valReport.passed} file(s)${RESET}\n`);
 
-  // Phase 2: Execute
-  console.log(`${YELLOW}[Phase 2] Executing tests...${RESET}`);
-  console.log(`${DIM}Run: npx playwright test${RESET}`);
-  console.log(`${DIM}(Execution engine delegates to Playwright/Vitest — run manually or via CI)${RESET}\n`);
+  // ── Phase 3: Execute (Playwright) ─────────────────────────────────
+  const resultsPath = path.join(qaDir, 'reports', 'execution-results.json');
+  if (!skipExecute) {
+    console.log(`${YELLOW}[Phase 3/6] Executing tests (Playwright)...${RESET}`);
+    const playwrightConfig = path.join(qaDir, 'playwright.config.ts');
+    const configFlag = fs.existsSync(playwrightConfig) ? `--config=${playwrightConfig}` : '';
 
-  // Phase 3: Heal (if results exist)
-  const resultsPath = path.resolve('qa-system', 'reports', 'execution-results.json');
+    try {
+      execSync(`npx playwright test ${configFlag}`, {
+        cwd: qaDir,
+        stdio: 'inherit',
+        timeout: 300_000,
+      });
+      console.log(`${GREEN}All tests passed.${RESET}\n`);
+    } catch {
+      console.log(`${RED}Some tests failed.${RESET}\n`);
+      // Continue pipeline — healing will attempt fixes
+    }
+  } else {
+    console.log(`${DIM}[Phase 3/6] Skipping execution (--skip-execute)${RESET}\n`);
+  }
+
+  // ── Phase 4: Heal ─────────────────────────────────────────────────
   if (fs.existsSync(resultsPath)) {
-    console.log(`${YELLOW}[Phase 3] Self-healing from results...${RESET}`);
+    console.log(`${YELLOW}[Phase 4/6] Self-healing from results...${RESET}`);
     const { heal } = await import('../src/engine/self-healing-agent.js');
     const healReport = heal(resultsPath, flags['dry-run'] === true);
 
@@ -187,32 +231,35 @@ async function cmdRun(configPath?: string, flags: Record<string, boolean | strin
     if (healReport.needsRegeneration > 0) {
       console.log(`${YELLOW}Needs AI regeneration: ${healReport.needsRegeneration}${RESET}`);
     }
+    console.log();
+  } else {
+    console.log(`${DIM}[Phase 4/6] No execution results — skipping heal${RESET}\n`);
   }
 
-  // Phase 4: Extract experience
-  console.log(`\n${YELLOW}[Phase 4] Extracting experience...${RESET}`);
+  // ── Phase 5: Learn ────────────────────────────────────────────────
+  console.log(`${YELLOW}[Phase 5/6] Extracting experience...${RESET}`);
   const { ExperienceLibrary } = await import('../src/engine/experience-library.js');
   const { extractExperiences } = await import('../src/engine/experience-extractor.js');
 
-  const dbPath = path.resolve('qa-system', 'experience-db.json');
+  const dbPath = path.join(qaDir, 'experience-db.json');
   const lib = ExperienceLibrary.load(dbPath);
 
   const extraction = extractExperiences({
-    projectName: configPath ? path.basename(configPath, '.config.json') : 'default',
+    projectName,
     executionResults: readJson(resultsPath),
     validationReport: valReport,
-    healingReport: readJson(path.resolve('qa-system', 'reports', 'healing-report.json')),
+    healingReport: readJson(path.join(qaDir, 'reports', 'healing-report.json')),
   }, lib);
 
   if (extraction.extracted > 0) {
     console.log(`${GREEN}Extracted ${extraction.extracted} new experiences${RESET}`);
   }
+  console.log();
 
-  // Phase 5: Strategy Evolution (scoped to this project)
-  const projectName = configPath ? path.basename(configPath, '.config.json') : 'default';
-  console.log(`\n${YELLOW}[Phase 5] Strategy evolution (project: ${projectName})...${RESET}`);
+  // ── Phase 6: Evolve ───────────────────────────────────────────────
+  console.log(`${YELLOW}[Phase 6/6] Strategy evolution...${RESET}`);
   const { StrategyEvolutionEngine } = await import('../src/engine/strategy-evolution.js');
-  const stratPath = path.resolve('qa-system', 'strategy-evolution-db.json');
+  const stratPath = path.join(qaDir, 'strategy-evolution-db.json');
   const stratEngine = StrategyEvolutionEngine.load(stratPath);
   const evolution = stratEngine.evolve(lib, projectName);
 
@@ -452,7 +499,7 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}qa detect${RESET} <repo-path>            Scan repo, auto-detect conventions, generate config
   ${CYAN}qa init${RESET}                          Create qa-system/ directory in current project
   ${CYAN}qa validate${RESET} [--config <path>]     Validate test files against quality rules
-  ${CYAN}qa run${RESET} [--config <path>]          Full pipeline: validate → execute → heal → learn
+  ${CYAN}qa run${RESET} [--config <path>]          Full pipeline: generate → validate → execute → heal → learn → evolve
   ${CYAN}qa heal${RESET} <results.json>            Self-heal failed tests from execution results
   ${CYAN}qa experience${RESET} [--stats|--query]   View experience library
   ${CYAN}qa generate${RESET} [--config <path>]       Generate tests via Claude Code CLI (AI)

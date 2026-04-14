@@ -334,7 +334,7 @@ function generateAutoFix(diagnosis: DiagnosedFailure): AutoFix | null {
 // LEARNING DATABASE — Persists across runs to improve over time
 // ============================================================================
 
-const LEARNING_DB_PATH = path.resolve(__dirname, '..', 'analysis', 'learning-db.json');
+const LEARNING_DB_PATH = path.resolve(process.cwd(), 'qa-system', 'learning-db.json');
 
 function loadLearningDb(): LearningEntry[] {
   try {
@@ -627,7 +627,7 @@ function main(): void {
   printHealingReport(report);
 
   // Write report
-  const reportPath = path.resolve(__dirname, '..', 'reports', 'healing-report.json');
+  const reportPath = path.resolve(process.cwd(), 'qa-system', 'reports', 'healing-report.json');
   fs.mkdirSync(path.dirname(reportPath), { recursive: true });
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
   console.log(`JSON report: ${reportPath}`);

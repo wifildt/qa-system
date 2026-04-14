@@ -420,7 +420,7 @@ function main(): void {
 
   // Write config (without _detection_log)
   const { _detection_log, ...cleanConfig } = config;
-  const outputDir = path.resolve(__dirname, '..', '..', 'projects');
+  const outputDir = path.resolve(process.cwd(), 'qa-system');
   fs.mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, `${config.project.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}.config.json`);
   fs.writeFileSync(outputPath, JSON.stringify(cleanConfig, null, 2));

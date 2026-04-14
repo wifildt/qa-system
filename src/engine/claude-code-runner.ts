@@ -24,6 +24,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { FRAMEWORK_ROOT, frameworkAsset } from './paths.js';
 
 // ============================================================================
 // TYPES
@@ -115,7 +116,7 @@ export class ClaudeCodeRunner {
       ...config,
       projectRoot: path.resolve(config.projectRoot),
       additionalDirs: config.additionalDirs || [],
-      frameworkRoot: config.frameworkRoot || path.resolve(__dirname, '..', '..'),
+      frameworkRoot: config.frameworkRoot || FRAMEWORK_ROOT,
     };
   }
 
@@ -356,7 +357,7 @@ export function buildTestGenerationTasks(
   const context = contextParts.join('\n');
 
   // Load rules for context
-  const rulesDir = path.join(frameworkRoot, 'src', 'rules');
+  const rulesDir = frameworkAsset('src', 'rules');
   let rulesContext = '';
   if (fs.existsSync(rulesDir)) {
     const ruleFiles = fs.readdirSync(rulesDir).filter(f => f.endsWith('.json'));
