@@ -101,11 +101,8 @@ export class ClaudeCodeRunner {
    */
   async run(task: AgentTask): Promise<RunResult> {
     const start = Date.now();
-    // Plan tasks use user's model choice (opus for quality).
-    // Generate tasks always use sonnet (faster, less likely to hang reading too many files).
-    const isGenerateTask = task.agentType === 'ui-test-generator' || task.agentType === 'api-test-generator' || task.agentType === 'state-test-generator';
-    const model = isGenerateTask ? 'sonnet' : this.getModel();
-    const effort = model === 'opus' ? 'max' : DEFAULT_EFFORT;
+    const model = this.getModel();
+    const effort = this.getEffort();
 
     // Inject experience from previous runs (if available)
     const experienceCtx = this.loadExperienceContext(task.agentType);
