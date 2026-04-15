@@ -101,8 +101,11 @@ export class ClaudeCodeRunner {
    */
   async run(task: AgentTask): Promise<RunResult> {
     const start = Date.now();
-    const model = this.getModel();
-    const effort = this.getEffort();
+    // Plan tasks use user's model choice (opus for quality).
+    // Generate tasks always use sonnet (faster, less likely to hang reading too many files).
+    const isGenerateTask = task.agentType === 'ui-test-generator' || task.agentType === 'api-test-generator' || task.agentType === 'state-test-generator';
+    const model = isGenerateTask ? 'sonnet' : this.getModel();
+    const effort = model === 'opus' ? 'max' : DEFAULT_EFFORT;
 
     // Inject experience from previous runs (if available)
     const experienceCtx = this.loadExperienceContext(task.agentType);
@@ -264,6 +267,7 @@ export class ClaudeCodeRunner {
       '--output-format', 'stream-json',
       '--no-session-persistence',
       '--verbose',
+      '--max-turns', '30',
     ];
 
     // Allowed tools — restrict what claude can do
@@ -300,46 +304,51 @@ export class ClaudeCodeRunner {
 
       let lastOutput = '';
 
-      // Parse stream-json: each line is a JSON event
+      // Parse stream-json: each line is a JSON event. Show only tool calls.
+      let buffer = '';
       proc.stdout.on('data', (data) => {
-        const lines = data.toString().split('\n').filter(Boolean);
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete last line in buffer
+
         for (const line of lines) {
+          if (!line.trim()) continue;
           try {
             const event = JSON.parse(line);
 
             // Show tool use events (file reads, writes, etc.)
-            if (event.type === 'assistant' && event.subtype === 'tool_use') {
-              const tool = event.tool_name || event.name || '';
-              const input = event.input || {};
-              if (tool === 'Read') {
-                console.log(`  📖 Read: ${input.file_path || ''}`);
-              } else if (tool === 'Write') {
-                console.log(`  ✏️  Write: ${input.file_path || ''}`);
-              } else if (tool === 'Glob') {
-                console.log(`  🔍 Glob: ${input.pattern || ''}`);
-              } else if (tool === 'Grep') {
-                console.log(`  🔎 Grep: ${input.pattern || ''}`);
-              } else if (tool === 'Bash') {
-                console.log(`  💻 Bash: ${(input.command || '').slice(0, 80)}`);
-              } else if (tool) {
-                console.log(`  🔧 ${tool}`);
+            if (event.type === 'assistant') {
+              const msg = event.message;
+              if (msg?.content) {
+                for (const block of msg.content) {
+                  if (block.type === 'tool_use') {
+                    const tool = block.name || '';
+                    const input = block.input || {};
+                    if (tool === 'Read') {
+                      const fp = input.file_path || '';
+                      console.log(`  Read: ${fp.split('/').slice(-2).join('/')}`);
+                    } else if (tool === 'Write') {
+                      console.log(`  Write: ${input.file_path || ''}`);
+                    } else if (tool === 'Glob') {
+                      console.log(`  Glob: ${input.pattern || ''}`);
+                    } else if (tool === 'Grep') {
+                      console.log(`  Grep: ${input.pattern || ''}`);
+                    } else if (tool === 'Bash') {
+                      console.log(`  Bash: ${(input.command || '').slice(0, 80)}`);
+                    } else if (tool) {
+                      console.log(`  ${tool}`);
+                    }
+                  }
+                }
               }
             }
 
-            // Show text output
-            if (event.type === 'assistant' && event.subtype === 'text') {
-              lastOutput += event.text || '';
-            }
-
-            // Show result message
+            // Capture result
             if (event.type === 'result') {
               lastOutput = event.result || lastOutput;
             }
           } catch {
-            // Not JSON — raw text output, show as-is
-            if (line.trim()) {
-              console.log(`  ${line.trim().slice(0, 120)}`);
-            }
+            // Skip unparseable lines
           }
         }
       });
